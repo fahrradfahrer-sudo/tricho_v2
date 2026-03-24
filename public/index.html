@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Application - Field Management</title>
+    <!-- Leaflet & Leaflet.draw CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="app" class="container">
+        <h1>Customer Application - Field Management</h1>
+        <div id="step-indicators" class="steps">
+            <span id="step-1-indicator" class="step active">1. Personal Data</span>
+            <span id="step-2-indicator" class="step">2. Fields & Map</span>
+        </div>
+
+        <!-- Step 1: Personal Data -->
+        <div id="step-1" class="step-container">
+            <h2>Personal Data</h2>
+            <form id="customer-form">
+                <div class="form-group">
+                    <label for="name">Name:</label>
+                    <input type="text" id="name" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label for="email">Email:</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="phone">Phone:</label>
+                    <input type="tel" id="phone" name="phone">
+                </div>
+                <button type="button" id="btn-next-step" class="btn">Next Step</button>
+            </form>
+        </div>
+
+        <!-- Step 2: Field Management -->
+        <div id="step-2" class="step-container hidden">
+            <div class="map-layout">
+                <div class="sidebar">
+                    <h3>Field Management</h3>
+                    <div class="import-tools">
+                        <label for="import-file">Import KML/SHP (Zip):</label>
+                        <input type="file" id="import-file" accept=".kml, .zip">
+                    </div>
+                    <div id="field-list">
+                        <!-- Fields list items will go here -->
+                        <p>No fields added yet.</p>
+                    </div>
+                    <div class="actions">
+                        <button id="btn-submit" class="btn success">Submit Application</button>
+                        <button id="btn-prev-step" class="btn secondary">Back</button>
+                    </div>
+                </div>
+                <div id="map"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <!-- External Libs -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-geometryutil@0.10.3/src/leaflet.geometryutil.min.js"></script>
+    <!-- For SHP Support -->
+    <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
+    <!-- For KML Support -->
+    <script src="https://unpkg.com/leaflet-omnivore@0.3.4/leaflet-omnivore.min.js"></script>
+    <!-- App Logic -->
+    <script src="js/map.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
