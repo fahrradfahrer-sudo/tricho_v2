@@ -23,11 +23,27 @@ class MapManager {
             attribution: '© EOX IT Services GmbH'
         });
 
+        // Hybrid WMS (Satellite + Labels)
+        const hybridWMS = L.layerGroup([
+            L.tileLayer.wms('https://tiles.maps.eox.at/wms?', {
+                layers: 's2cloudless-2020_3857',
+                format: 'image/jpeg',
+                attribution: '© EOX IT Services GmbH'
+            }),
+            L.tileLayer.wms('https://tiles.maps.eox.at/wms?', {
+                layers: 'overlay_base_3857',
+                format: 'image/png',
+                transparent: true,
+                attribution: '© EOX IT Services GmbH'
+            })
+        ]);
+
         googleSat.addTo(this.map);
 
         const baseMaps = {
             "Google Satellit": googleSat,
             "Satellit WMS (EOX)": satelliteWMS,
+            "Satellit mit Beschriftung": hybridWMS,
             "OpenStreetMap": osm
         };
 
@@ -83,8 +99,12 @@ class MapManager {
         });
         this.map.addControl(drawControl);
 
+        // Geocoder instance for programmatic use
+        this.geocoder = L.Control.Geocoder.nominatim();
+
         // Geocoder Control
         L.Control.geocoder({
+            geocoder: this.geocoder,
             defaultMarkGeocode: false,
             placeholder: 'Suche nach Ort...',
             errorMessage: 'Nichts gefunden.'
@@ -141,5 +161,22 @@ class MapManager {
 
     clearFields() {
         this.drawnItems.clearLayers();
+    }
+
+    centerMapByPostalCode(postalCode) {
+        if (!postalCode) {
+            this.map.setView([49.5634, 8.2478], 14); // Dirmstein
+            return;
+        }
+
+        this.geocoder.geocode(postalCode + ", Deutschland", (results) => {
+            if (results && results.length > 0) {
+                const result = results[0];
+                this.map.fitBounds(result.bbox);
+            } else {
+                console.warn("PLZ nicht gefunden: " + postalCode);
+                this.map.setView([49.5634, 8.2478], 14); // Fallback to Dirmstein
+            }
+        });
     }
 }
