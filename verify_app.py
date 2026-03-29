@@ -15,14 +15,22 @@ async def run():
         await page.screenshot(path="step1.png")
 
         # 2. Fill Step 1
-        await page.fill("#name", "John Doe")
-        await page.fill("#email", "john.doe@example.com")
-        await page.fill("#phone", "123456789")
+        await page.fill("#first_name", "Max")
+        await page.fill("#name", "Mustermann")
+        await page.fill("#company", "Musterland AG")
+        await page.fill("#street", "Musterstraße")
+        await page.fill("#house_number", "10")
+        await page.fill("#postal_code", "12345")
+        await page.fill("#city", "Musterstadt")
+        await page.fill("#email", "max.mustermann@example.com")
+        await page.fill("#phone", "0123456789")
+        await page.fill("#comments", "Dies ist ein Testkommentar.")
+        await page.check("#dsgvo")
         await page.click("#btn-next-step")
         print("Navigated to Step 2.")
 
         # 3. Verify Step 2 (Map)
-        await page.wait_for_selector("#map")
+        await page.wait_for_selector("#map", state="visible")
         # Wait a bit for Leaflet to initialize
         await asyncio.sleep(2)
         print("Step 2 (Map) loaded.")
@@ -34,10 +42,10 @@ async def run():
         # We'll call the internal addFieldToMap method
         test_geojson = {
             "type": "Feature",
-            "properties": {"name": "Test Field"},
+            "properties": {"name": "Testschlag"},
             "geometry": {
                 "type": "Polygon",
-                "coordinates": [[[11.58, 48.13], [11.59, 48.13], [11.59, 48.14], [11.58, 48.14], [11.58, 48.13]]]
+                "coordinates": [[[8.24, 49.56], [8.25, 49.56], [8.25, 49.57], [8.24, 49.57], [8.24, 49.56]]]
             }
         }
         await page.evaluate(f"app.addImportedGeoJson({test_geojson})")

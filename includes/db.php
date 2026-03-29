@@ -8,9 +8,17 @@ try {
     // Create customers table
     $db->exec("CREATE TABLE IF NOT EXISTS customers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        first_name TEXT,
         name TEXT NOT NULL,
+        company TEXT,
+        street TEXT,
+        house_number TEXT,
+        postal_code TEXT,
+        city TEXT,
         email TEXT NOT NULL,
         phone TEXT,
+        comments TEXT,
+        dsgvo_accepted INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 

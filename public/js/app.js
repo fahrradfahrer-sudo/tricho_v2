@@ -22,7 +22,7 @@ class App {
         this.mapManager.onFieldAdded = (layer, name) => {
             const field = {
                 id: L.stamp(layer),
-                name: name || `Field ${this.fields.length + 1}`,
+                name: name || `Schlag ${this.fields.length + 1}`,
                 geometry: JSON.stringify(layer.toGeoJSON().geometry),
                 area: L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]) / 10000 // In Hectares (Ha)
             };
@@ -63,17 +63,25 @@ class App {
         });
 
         this.importFileInput.addEventListener('change', (e) => {
-            this.handleImport(e.target.files[0]);
+            this.handleImport(e.target.files);
         });
     }
 
     validateStep1() {
         const name = document.getElementById('name').value;
         const email = document.getElementById('email').value;
+        const dsgvo = document.getElementById('dsgvo').checked;
+
         if (!name || !email) {
-            alert('Please fill in name and email.');
+            alert('Bitte füllen Sie Nachname und E-Mail aus.');
             return false;
         }
+
+        if (!dsgvo) {
+            alert('Bitte akzeptieren Sie die Datenschutzbestimmungen (DSGVO).');
+            return false;
+        }
+
         return true;
     }
 
@@ -98,7 +106,7 @@ class App {
     updateFieldList() {
         this.fieldList.innerHTML = '';
         if (this.fields.length === 0) {
-            this.fieldList.innerHTML = '<p>No fields added yet.</p>';
+            this.fieldList.innerHTML = '<p>Noch keine Schläge hinzugefügt.</p>';
             return;
         }
 
@@ -107,10 +115,10 @@ class App {
             div.className = 'field-item';
             div.innerHTML = `
                 <h4>${field.name}</h4>
-                <p>Area: ${field.area.toFixed(2)} Ha</p>
+                <p>Fläche: ${field.area.toFixed(2)} Ha</p>
                 <div class="actions">
-                    <button onclick="app.editFieldName('${field.id}')" class="btn secondary">Rename</button>
-                    <button onclick="app.deleteField('${field.id}')" class="btn">Delete</button>
+                    <button onclick="app.editFieldName('${field.id}')" class="btn secondary">Umbenennen</button>
+                    <button onclick="app.deleteField('${field.id}')" class="btn">Löschen</button>
                 </div>
             `;
             this.fieldList.appendChild(div);
@@ -120,7 +128,7 @@ class App {
     editFieldName(id) {
         const field = this.fields.find(f => String(f.id) === String(id));
         if (field) {
-            const newName = prompt('Enter new field name:', field.name);
+            const newName = prompt('Neuen Schlagnamen eingeben:', field.name);
             if (newName) {
                 field.name = newName;
                 this.updateFieldList();
@@ -129,7 +137,7 @@ class App {
     }
 
     deleteField(id) {
-        if (!confirm('Are you sure you want to delete this field?')) return;
+        if (!confirm('Sind Sie sicher, dass Sie diesen Schlag löschen möchten?')) return;
         const field = this.fields.find(f => String(f.id) === String(id));
         if (field) {
             const layer = this.mapManager.drawnItems.getLayer(id);
@@ -141,9 +149,32 @@ class App {
         }
     }
 
-    async handleImport(file) {
-        if (!file) return;
+    async handleImport(files) {
+        if (!files || files.length === 0) return;
 
+        // Check if multiple files are selected (unzipped SHP)
+        const fileMap = {};
+        for (let i = 0; i < files.length; i++) {
+            const ext = files[i].name.split('.').pop().toLowerCase();
+            fileMap[ext] = files[i];
+        }
+
+        if (fileMap['shp']) {
+            // Unzipped SHP
+            try {
+                const shpBuffer = await fileMap['shp'].arrayBuffer();
+                const dbfBuffer = fileMap['dbf'] ? await fileMap['dbf'].arrayBuffer() : null;
+                const geoJson = await shp.combine([shp.parseShp(shpBuffer), shp.parseDbf(dbfBuffer)]);
+                this.addImportedGeoJson(geoJson);
+            } catch (err) {
+                console.error(err);
+                alert('Fehler beim Verarbeiten der SHP-Datei: ' + err.message);
+            }
+            return;
+        }
+
+        // Single file import
+        const file = files[0];
         const reader = new FileReader();
         reader.onload = async (e) => {
             try {
@@ -154,15 +185,17 @@ class App {
                     this.addImportedGeoJson(geoJson);
                 } else if (extension === 'kml') {
                     // KML file
-                    // Use omnivore.kml.parse from global scope if available
                     const kmlLayer = omnivore.kml.parse(e.target.result);
                     this.addImportedGeoJson(kmlLayer.toGeoJSON());
+                } else if (extension === 'xml') {
+                    // Digital Field Record Book (ISO-XML)
+                    this.parseISOXML(e.target.result);
                 } else {
-                    alert('Unsupported file format. Please use .zip (for SHP) or .kml.');
+                    alert('Nicht unterstütztes Dateiformat. Bitte verwenden Sie .zip (für SHP), .kml, .xml (ISO-XML) oder wählen Sie alle SHP-Einzeldateien aus.');
                 }
             } catch (err) {
                 console.error(err);
-                alert('Error processing file: ' + err.message);
+                alert('Fehler beim Verarbeiten der Datei: ' + err.message);
             }
         };
 
@@ -170,6 +203,55 @@ class App {
             reader.readAsArrayBuffer(file);
         } else {
             reader.readAsText(file);
+        }
+    }
+
+    parseISOXML(xmlString) {
+        try {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+            const partfields = xmlDoc.getElementsByTagName("PFD"); // Partfield
+
+            if (partfields.length === 0) {
+                alert('Keine Schläge in der XML-Datei gefunden.');
+                return;
+            }
+
+            for (let i = 0; i < partfields.length; i++) {
+                const pfd = partfields[i];
+                const name = pfd.getAttribute("C") || `Schlag ${this.fields.length + 1}`;
+                const polygons = pfd.getElementsByTagName("PLN"); // Polygon
+
+                for (let j = 0; j < polygons.length; j++) {
+                    const pln = polygons[j];
+                    const points = pln.getElementsByTagName("PNT"); // Point
+                    const latlngs = [];
+
+                    for (let k = 0; k < points.length; k++) {
+                        const pnt = points[k];
+                        const lat = parseFloat(pnt.getAttribute("A")); // Latitude
+                        const lng = parseFloat(pnt.getAttribute("B")); // Longitude
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            latlngs.push([lat, lng]);
+                        }
+                    }
+
+                    if (latlngs.length > 2) {
+                        const geoJson = {
+                            type: "Feature",
+                            properties: { name: name },
+                            geometry: {
+                                type: "Polygon",
+                                coordinates: [latlngs.map(ll => [ll[1], ll[0]])]
+                            }
+                        };
+                        this.addImportedGeoJson(geoJson);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Fehler beim Parsen der ISO-XML Datei: ' + err.message);
         }
     }
 
@@ -185,13 +267,21 @@ class App {
 
     async submitApplication() {
         if (this.fields.length === 0) {
-            if (!confirm('No fields added. Do you want to submit anyway?')) return;
+            if (!confirm('Keine Schläge hinzugefügt. Trotzdem absenden?')) return;
         }
 
         const formData = new FormData();
+        formData.append('customer_first_name', document.getElementById('first_name').value);
         formData.append('customer_name', document.getElementById('name').value);
+        formData.append('customer_company', document.getElementById('company').value);
+        formData.append('customer_street', document.getElementById('street').value);
+        formData.append('customer_house_number', document.getElementById('house_number').value);
+        formData.append('customer_postal_code', document.getElementById('postal_code').value);
+        formData.append('customer_city', document.getElementById('city').value);
         formData.append('customer_email', document.getElementById('email').value);
         formData.append('customer_phone', document.getElementById('phone').value);
+        formData.append('customer_comments', document.getElementById('comments').value);
+        formData.append('customer_dsgvo_accepted', document.getElementById('dsgvo').checked ? 1 : 0);
 
         this.fields.forEach((field, index) => {
             formData.append(`fields[${index}][name]`, field.name);
@@ -206,14 +296,14 @@ class App {
             });
             const result = await response.json();
             if (result.success) {
-                alert('Application submitted successfully! Customer ID: ' + result.customerId);
+                alert('Antrag erfolgreich abgesendet! Kunden-ID: ' + result.customerId);
                 location.reload();
             } else {
-                alert('Error: ' + result.message);
+                alert('Fehler: ' + result.message);
             }
         } catch (err) {
             console.error(err);
-            alert('An error occurred while submitting.');
+            alert('Beim Absenden ist ein Fehler aufgetreten.');
         }
     }
 }
