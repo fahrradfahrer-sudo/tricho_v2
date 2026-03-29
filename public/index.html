@@ -1,40 +1,81 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Customer Application - Field Management</title>
+    <title>Kundenantrag - Schlagverwaltung</title>
     <!-- Leaflet & Leaflet.draw CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
     <!-- Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
     <div id="app" class="container">
-        <h1>Customer Application - Field Management</h1>
+        <h1>Kundenantrag - Schlagverwaltung</h1>
         <div id="step-indicators" class="steps">
-            <span id="step-1-indicator" class="step active">1. Personal Data</span>
-            <span id="step-2-indicator" class="step">2. Fields & Map</span>
+            <span id="step-1-indicator" class="step active">1. Persönliche Daten</span>
+            <span id="step-2-indicator" class="step">2. Schläge & Karte</span>
         </div>
 
         <!-- Step 1: Personal Data -->
         <div id="step-1" class="step-container">
-            <h2>Personal Data</h2>
+            <h2>Persönliche Daten</h2>
             <form id="customer-form">
-                <div class="form-group">
-                    <label for="name">Name:</label>
-                    <input type="text" id="name" name="name" required>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="first_name">Vorname:</label>
+                        <input type="text" id="first_name" name="first_name">
+                    </div>
+                    <div class="form-group">
+                        <label for="name">Nachname:</label>
+                        <input type="text" id="name" name="name" required>
+                    </div>
                 </div>
                 <div class="form-group">
-                    <label for="email">Email:</label>
-                    <input type="email" id="email" name="email" required>
+                    <label for="company">Firma:</label>
+                    <input type="text" id="company" name="company">
+                </div>
+                <div class="form-row">
+                    <div class="form-group flex-3">
+                        <label for="street">Straße:</label>
+                        <input type="text" id="street" name="street">
+                    </div>
+                    <div class="form-group flex-1">
+                        <label for="house_number">Nr.:</label>
+                        <input type="text" id="house_number" name="house_number">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group flex-1">
+                        <label for="postal_code">PLZ:</label>
+                        <input type="text" id="postal_code" name="postal_code">
+                    </div>
+                    <div class="form-group flex-3">
+                        <label for="city">Ort:</label>
+                        <input type="text" id="city" name="city">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="email">E-Mail:</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="phone">Telefon:</label>
+                        <input type="tel" id="phone" name="phone">
+                    </div>
                 </div>
                 <div class="form-group">
-                    <label for="phone">Phone:</label>
-                    <input type="tel" id="phone" name="phone">
+                    <label for="comments">Anmerkungen:</label>
+                    <textarea id="comments" name="comments" rows="3"></textarea>
                 </div>
-                <button type="button" id="btn-next-step" class="btn">Next Step</button>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="dsgvo" name="dsgvo" required>
+                    <label for="dsgvo">Ich akzeptiere die <a href="#" target="_blank">Datenschutzbestimmungen (DSGVO)</a>.</label>
+                </div>
+                <button type="button" id="btn-next-step" class="btn">Nächster Schritt</button>
             </form>
         </div>
 
@@ -42,18 +83,18 @@
         <div id="step-2" class="step-container hidden">
             <div class="map-layout">
                 <div class="sidebar">
-                    <h3>Field Management</h3>
+                    <h3>Schlagverwaltung</h3>
                     <div class="import-tools">
-                        <label for="import-file">Import KML/SHP (Zip):</label>
-                        <input type="file" id="import-file" accept=".kml, .zip">
+                        <label for="import-file">Schläge importieren (KML, SHP-Zip, SHP-Einzeldateien oder Digitale Schlagkartei):</label>
+                        <input type="file" id="import-file" accept=".kml, .zip, .shp, .dbf, .shx, .prj, .xml" multiple>
                     </div>
                     <div id="field-list">
                         <!-- Fields list items will go here -->
-                        <p>No fields added yet.</p>
+                        <p>Noch keine Schläge hinzugefügt.</p>
                     </div>
                     <div class="actions">
-                        <button id="btn-submit" class="btn success">Submit Application</button>
-                        <button id="btn-prev-step" class="btn secondary">Back</button>
+                        <button id="btn-submit" class="btn success">Antrag absenden</button>
+                        <button id="btn-prev-step" class="btn secondary">Zurück</button>
                     </div>
                 </div>
                 <div id="map"></div>
@@ -66,6 +107,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet-geometryutil@0.10.3/src/leaflet.geometryutil.min.js"></script>
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
     <!-- For SHP Support -->
     <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
     <!-- For KML Support -->

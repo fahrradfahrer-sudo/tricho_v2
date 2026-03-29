@@ -12,11 +12,19 @@ try {
     $db->beginTransaction();
 
     // 1. Insert Customer Data
-    $stmt = $db->prepare("INSERT INTO customers (name, email, phone) VALUES (?, ?, ?)");
+    $stmt = $db->prepare("INSERT INTO customers (first_name, name, company, street, house_number, postal_code, city, email, phone, comments, dsgvo_accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
+        $_POST['customer_first_name'] ?? '',
         $_POST['customer_name'] ?? '',
+        $_POST['customer_company'] ?? '',
+        $_POST['customer_street'] ?? '',
+        $_POST['customer_house_number'] ?? '',
+        $_POST['customer_postal_code'] ?? '',
+        $_POST['customer_city'] ?? '',
         $_POST['customer_email'] ?? '',
-        $_POST['customer_phone'] ?? ''
+        $_POST['customer_phone'] ?? '',
+        $_POST['customer_comments'] ?? '',
+        $_POST['customer_dsgvo_accepted'] ?? 0
     ]);
     $customerId = $db->lastInsertId();
 

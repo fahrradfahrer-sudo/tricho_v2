@@ -1,12 +1,12 @@
 class MapManager {
     constructor(mapId) {
-        this.map = L.map(mapId).setView([48.1351, 11.5820], 13); // Default view
+        this.map = L.map(mapId).setView([49.5634, 8.2478], 14); // Dirmstein, Germany
         this.drawnItems = new L.FeatureGroup();
         this.map.addLayer(this.drawnItems);
 
         // Layers
         const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
+            attribution: '© OpenStreetMap-Mitwirkende'
         });
 
         // Google Satellite (XYZ Tiles)
@@ -26,16 +26,43 @@ class MapManager {
         googleSat.addTo(this.map);
 
         const baseMaps = {
-            "Google Satellite": googleSat,
-            "Satellite WMS (EOX)": satelliteWMS,
+            "Google Satellit": googleSat,
+            "Satellit WMS (EOX)": satelliteWMS,
             "OpenStreetMap": osm
         };
 
         const overlayMaps = {
-            "Drawn Fields": this.drawnItems
+            "Eingezeichnete Schläge": this.drawnItems
         };
 
         L.control.layers(baseMaps, overlayMaps).addTo(this.map);
+
+        // Localize Leaflet Draw
+        L.drawLocal.draw.toolbar.buttons.polygon = 'Einen Schlag zeichnen';
+        L.drawLocal.draw.toolbar.buttons.rectangle = 'Ein Rechteck zeichnen';
+        L.drawLocal.draw.toolbar.actions.title = 'Zeichnen abbrechen';
+        L.drawLocal.draw.toolbar.actions.text = 'Abbrechen';
+        L.drawLocal.draw.toolbar.finish.title = 'Zeichnen beenden';
+        L.drawLocal.draw.toolbar.finish.text = 'Beenden';
+        L.drawLocal.draw.toolbar.undo.title = 'Zuletzt gezeichneten Punkt löschen';
+        L.drawLocal.draw.toolbar.undo.text = 'Letzten Punkt löschen';
+        L.drawLocal.draw.handlers.polygon.tooltip.start = 'Klicken Sie, um mit dem Zeichnen zu beginnen.';
+        L.drawLocal.draw.handlers.polygon.tooltip.cont = 'Klicken Sie, um das Zeichnen fortzusetzen.';
+        L.drawLocal.draw.handlers.polygon.tooltip.end = 'Klicken Sie auf den ersten Punkt, um die Fläche zu schließen.';
+        L.drawLocal.draw.handlers.rectangle.tooltip.start = 'Klicken und ziehen Sie, um ein Rechteck zu zeichnen.';
+        L.drawLocal.draw.handlers.simpleshape.tooltip.end = 'Lassen Sie die Maustaste los, um das Zeichnen zu beenden.';
+
+        L.drawLocal.edit.toolbar.actions.save.title = 'Änderungen speichern';
+        L.drawLocal.edit.toolbar.actions.save.text = 'Speichern';
+        L.drawLocal.edit.toolbar.actions.cancel.title = 'Bearbeitung abbrechen, alle Änderungen verwerfen';
+        L.drawLocal.edit.toolbar.actions.cancel.text = 'Abbrechen';
+        L.drawLocal.edit.toolbar.buttons.edit = 'Schläge bearbeiten';
+        L.drawLocal.edit.toolbar.buttons.editDisabled = 'Keine Schläge zum Bearbeiten vorhanden';
+        L.drawLocal.edit.toolbar.buttons.remove = 'Schläge löschen';
+        L.drawLocal.edit.toolbar.buttons.removeDisabled = 'Keine Schläge zum Löschen vorhanden';
+        L.drawLocal.edit.handlers.edit.tooltip.text = 'Griffe ziehen oder Markierungen verschieben, um Funktionen zu ändern.';
+        L.drawLocal.edit.handlers.edit.tooltip.subtext = 'Klicken Sie auf Abbrechen, um die Änderungen rückgängig zu machen.';
+        L.drawLocal.edit.handlers.remove.tooltip.text = 'Klicken Sie auf eine Funktion, um sie zu entfernen.';
 
         // Leaflet Draw Control
         const drawControl = new L.Control.Draw({
@@ -55,6 +82,24 @@ class MapManager {
             }
         });
         this.map.addControl(drawControl);
+
+        // Geocoder Control
+        L.Control.geocoder({
+            defaultMarkGeocode: false,
+            placeholder: 'Suche nach Ort...',
+            errorMessage: 'Nichts gefunden.'
+        })
+        .on('markgeocode', (e) => {
+            const bbox = e.geocode.bbox;
+            const poly = L.polygon([
+                bbox.getSouthEast(),
+                bbox.getNorthEast(),
+                bbox.getNorthWest(),
+                bbox.getSouthWest()
+            ]);
+            this.map.fitBounds(poly.getBounds());
+        })
+        .addTo(this.map);
 
         // Event listeners for drawing
         this.map.on(L.Draw.Event.CREATED, (e) => {
