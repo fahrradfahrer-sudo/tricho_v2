@@ -32,10 +32,10 @@
                         <label for="name">Nachname:</label>
                         <input type="text" id="name" name="name" required>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label for="company">Firma:</label>
-                    <input type="text" id="company" name="company">
+                    <div class="form-group">
+                        <label for="company">Firma:</label>
+                        <input type="text" id="company" name="company">
+                    </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group flex-3">
@@ -84,6 +84,13 @@
             <div class="map-layout">
                 <div class="sidebar">
                     <h3>Schlagverwaltung</h3>
+                    <div class="search-tools">
+                        <label for="search-postal-code">Karte zentrieren (PLZ):</label>
+                        <div class="input-group">
+                            <input type="text" id="search-postal-code" placeholder="z.B. 67245">
+                            <button type="button" id="btn-search-plz" class="btn secondary small">Suche</button>
+                        </div>
+                    </div>
                     <div class="import-tools">
                         <label for="import-file">Schläge importieren (KML, SHP-Zip, SHP-Einzeldateien oder Digitale Schlagkartei):</label>
                         <input type="file" id="import-file" accept=".kml, .zip, .shp, .dbf, .shx, .prj, .xml" multiple>

@@ -9,6 +9,8 @@ class App {
         this.btnSubmit = document.getElementById('btn-submit');
         this.fieldList = document.getElementById('field-list');
         this.importFileInput = document.getElementById('import-file');
+        this.btnSearchPlz = document.getElementById('btn-search-plz');
+        this.searchPlzInput = document.getElementById('search-postal-code');
 
         this.fields = []; // Local storage for fields data
 
@@ -65,6 +67,10 @@ class App {
         this.importFileInput.addEventListener('change', (e) => {
             this.handleImport(e.target.files);
         });
+
+        this.btnSearchPlz.addEventListener('click', () => {
+            this.mapManager.centerMapByPostalCode(this.searchPlzInput.value);
+        });
     }
 
     validateStep1() {
@@ -96,6 +102,11 @@ class App {
             this.step2.classList.remove('hidden');
             this.step2Indicator.classList.add('active');
             this.step1Indicator.classList.remove('active');
+
+            // Center map based on Step 1 postal code
+            const postalCode = document.getElementById('postal_code').value;
+            this.mapManager.centerMapByPostalCode(postalCode);
+
             // Force map resize
             setTimeout(() => {
                 this.mapManager.map.invalidateSize();
@@ -164,7 +175,16 @@ class App {
             try {
                 const shpBuffer = await fileMap['shp'].arrayBuffer();
                 const dbfBuffer = fileMap['dbf'] ? await fileMap['dbf'].arrayBuffer() : null;
-                const geoJson = await shp.combine([shp.parseShp(shpBuffer), shp.parseDbf(dbfBuffer)]);
+                const shxBuffer = fileMap['shx'] ? await fileMap['shx'].arrayBuffer() : null;
+                const prjBuffer = fileMap['prj'] ? await fileMap['prj'].arrayBuffer() : null;
+
+                // shp.parseShp also takes shx as second argument
+                const shpObj = shp.parseShp(shpBuffer, shxBuffer);
+                const dbfObj = dbfBuffer ? shp.parseDbf(dbfBuffer) : null;
+
+                // shpjs handles prj if passed in certain ways, but for combine we mostly need geometry
+                const geoJson = await shp.combine([shpObj, dbfObj]);
+
                 this.addImportedGeoJson(geoJson);
             } catch (err) {
                 console.error(err);
