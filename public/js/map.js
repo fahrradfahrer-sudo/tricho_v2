@@ -100,7 +100,9 @@ class MapManager {
         this.map.addControl(drawControl);
 
         // Geocoder instance for programmatic use
-        this.geocoder = L.Control.Geocoder.nominatim();
+        this.geocoder = L.Control.Geocoder.nominatim({
+            geocodingQueryParams: { addressdetails: 1 }
+        });
 
         // Geocoder Control
         L.Control.geocoder({
@@ -111,13 +113,7 @@ class MapManager {
         })
         .on('markgeocode', (e) => {
             const bbox = e.geocode.bbox;
-            const poly = L.polygon([
-                bbox.getSouthEast(),
-                bbox.getNorthEast(),
-                bbox.getNorthWest(),
-                bbox.getSouthWest()
-            ]);
-            this.map.fitBounds(poly.getBounds());
+            this.map.fitBounds(bbox, { maxZoom: 16 });
         })
         .addTo(this.map);
 
@@ -163,46 +159,44 @@ class MapManager {
         this.drawnItems.clearLayers();
     }
 
-    centerMapByPostalCode(postalCode) {
+    async geocodePostalCode(postalCode) {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(postalCode + ", Germany")}&limit=1`;
+        try {
+            const response = await fetch(url, {
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await response.json();
+            return data && data.length > 0 ? data[0] : null;
+        } catch (err) {
+            console.error("Geocoding fetch error:", err);
+            return null;
+        }
+    }
+
+    async centerMapByPostalCode(postalCode) {
         if (!postalCode) {
             this.map.setView([49.5634, 8.2478], 14); // Dirmstein
             return;
         }
 
-        // Use Nominatim directly to ensure it works
-        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(postalCode + ", Germany")}&limit=1`;
+        const result = await this.geocodePostalCode(postalCode);
+        if (result) {
+            const lat = parseFloat(result.lat);
+            const lon = parseFloat(result.lon);
 
-        fetch(url, {
-            headers: {
-                'Accept': 'application/json',
-                'User-Agent': 'Kundenantrag-App'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data && data.length > 0) {
-                const result = data[0];
-                const lat = parseFloat(result.lat);
-                const lon = parseFloat(result.lon);
-
-                if (result.boundingbox) {
-                    const bbox = result.boundingbox;
-                    // Nominatim returns [lat_min, lat_max, lon_min, lon_max]
-                    this.map.fitBounds([
-                        [parseFloat(bbox[0]), parseFloat(bbox[2])],
-                        [parseFloat(bbox[1]), parseFloat(bbox[3])]
-                    ]);
-                } else {
-                    this.map.setView([lat, lon], 14);
-                }
+            if (result.boundingbox) {
+                const bbox = result.boundingbox;
+                // Nominatim returns [lat_min, lat_max, lon_min, lon_max]
+                this.map.fitBounds([
+                    [parseFloat(bbox[0]), parseFloat(bbox[2])],
+                    [parseFloat(bbox[1]), parseFloat(bbox[3])]
+                ], { maxZoom: 16 });
             } else {
-                console.warn("PLZ nicht gefunden: " + postalCode);
-                this.map.setView([49.5634, 8.2478], 14);
+                this.map.setView([lat, lon], 16);
             }
-        })
-        .catch(err => {
-            console.error("Geocoding error:", err);
+        } else {
+            console.warn("PLZ nicht gefunden: " + postalCode);
             this.map.setView([49.5634, 8.2478], 14);
-        });
+        }
     }
 }

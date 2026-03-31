@@ -16,6 +16,7 @@ class App {
 
         this.initMap();
         this.attachEventListeners();
+        this.updateFieldList();
     }
 
     initMap() {
@@ -74,17 +75,40 @@ class App {
 
         this.searchPlzInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
+                e.preventDefault();
                 this.mapManager.centerMapByPostalCode(this.searchPlzInput.value);
             }
         });
 
-        document.getElementById('postal_code').addEventListener('keydown', (e) => {
+        const postalCodeInput = document.getElementById('postal_code');
+        postalCodeInput.addEventListener('keydown', async (e) => {
             if (e.key === 'Enter') {
+                e.preventDefault();
+                await this.handlePostalCodeLookup(postalCodeInput.value);
+
                 if (this.validateStep1()) {
                     this.switchStep(2);
                 }
             }
         });
+
+        postalCodeInput.addEventListener('blur', () => {
+            this.handlePostalCodeLookup(postalCodeInput.value);
+        });
+    }
+
+    async handlePostalCodeLookup(plz) {
+        if (!plz || plz.length < 5) return;
+
+        const result = await this.mapManager.geocodePostalCode(plz);
+        if (result && result.address) {
+            const address = result.address;
+            const cityInput = document.getElementById('city');
+            const city = address.city || address.town || address.village || address.suburb;
+            if (city && !cityInput.value) {
+                cityInput.value = city;
+            }
+        }
     }
 
     validateStep1() {
@@ -130,16 +154,19 @@ class App {
 
     updateFieldList() {
         this.fieldList.innerHTML = '';
-        if (this.fields.length === 0) {
-            this.fieldList.innerHTML = '<p>Noch keine Schläge hinzugefügt.</p>';
-            return;
-        }
 
         const totalArea = this.fields.reduce((sum, field) => sum + field.area, 0);
         const totalAreaDiv = document.createElement('div');
         totalAreaDiv.className = 'total-area';
         totalAreaDiv.innerHTML = `<strong>Gesamtfläche: ${totalArea.toFixed(2)} Ha</strong>`;
         this.fieldList.appendChild(totalAreaDiv);
+
+        if (this.fields.length === 0) {
+            const emptyMsg = document.createElement('p');
+            emptyMsg.textContent = 'Noch keine Schläge hinzugefügt.';
+            this.fieldList.appendChild(emptyMsg);
+            return;
+        }
 
         this.fields.forEach(field => {
             const div = document.createElement('div');
