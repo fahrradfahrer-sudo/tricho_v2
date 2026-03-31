@@ -169,14 +169,40 @@ class MapManager {
             return;
         }
 
-        this.geocoder.geocode(postalCode + ", Deutschland", (results) => {
-            if (results && results.length > 0) {
-                const result = results[0];
-                this.map.fitBounds(result.bbox);
+        // Use Nominatim directly to ensure it works
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(postalCode + ", Germany")}&limit=1`;
+
+        fetch(url, {
+            headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Kundenantrag-App'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data && data.length > 0) {
+                const result = data[0];
+                const lat = parseFloat(result.lat);
+                const lon = parseFloat(result.lon);
+
+                if (result.boundingbox) {
+                    const bbox = result.boundingbox;
+                    // Nominatim returns [lat_min, lat_max, lon_min, lon_max]
+                    this.map.fitBounds([
+                        [parseFloat(bbox[0]), parseFloat(bbox[2])],
+                        [parseFloat(bbox[1]), parseFloat(bbox[3])]
+                    ]);
+                } else {
+                    this.map.setView([lat, lon], 14);
+                }
             } else {
                 console.warn("PLZ nicht gefunden: " + postalCode);
-                this.map.setView([49.5634, 8.2478], 14); // Fallback to Dirmstein
+                this.map.setView([49.5634, 8.2478], 14);
             }
+        })
+        .catch(err => {
+            console.error("Geocoding error:", err);
+            this.map.setView([49.5634, 8.2478], 14);
         });
     }
 }

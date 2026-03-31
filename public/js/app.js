@@ -71,6 +71,20 @@ class App {
         this.btnSearchPlz.addEventListener('click', () => {
             this.mapManager.centerMapByPostalCode(this.searchPlzInput.value);
         });
+
+        this.searchPlzInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                this.mapManager.centerMapByPostalCode(this.searchPlzInput.value);
+            }
+        });
+
+        document.getElementById('postal_code').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                if (this.validateStep1()) {
+                    this.switchStep(2);
+                }
+            }
+        });
     }
 
     validateStep1() {
@@ -103,13 +117,13 @@ class App {
             this.step2Indicator.classList.add('active');
             this.step1Indicator.classList.remove('active');
 
-            // Center map based on Step 1 postal code
-            const postalCode = document.getElementById('postal_code').value;
-            this.mapManager.centerMapByPostalCode(postalCode);
-
             // Force map resize
             setTimeout(() => {
                 this.mapManager.map.invalidateSize();
+
+                // Center map based on Step 1 postal code after resize
+                const postalCode = document.getElementById('postal_code').value;
+                this.mapManager.centerMapByPostalCode(postalCode);
             }, 100);
         }
     }
@@ -120,6 +134,12 @@ class App {
             this.fieldList.innerHTML = '<p>Noch keine Schläge hinzugefügt.</p>';
             return;
         }
+
+        const totalArea = this.fields.reduce((sum, field) => sum + field.area, 0);
+        const totalAreaDiv = document.createElement('div');
+        totalAreaDiv.className = 'total-area';
+        totalAreaDiv.innerHTML = `<strong>Gesamtfläche: ${totalArea.toFixed(2)} Ha</strong>`;
+        this.fieldList.appendChild(totalAreaDiv);
 
         this.fields.forEach(field => {
             const div = document.createElement('div');

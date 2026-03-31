@@ -133,6 +133,15 @@ body {
     border-radius: 5px;
 }
 
+.total-area {
+    padding: 10px;
+    margin-bottom: 15px;
+    background: #e9ecef;
+    border-radius: 5px;
+    border-left: 5px solid #007bff;
+    font-size: 1.1em;
+}
+
 .import-tools {
     margin-bottom: 20px;
     border-bottom: 1px solid #eee;
