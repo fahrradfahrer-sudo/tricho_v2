@@ -14,6 +14,42 @@
 <body>
     <div id="app" class="container">
         <h1>Kundenantrag - Schlagverwaltung</h1>
+
+        <!-- Flight Plan Modal -->
+        <div id="flightplan-modal" class="modal hidden">
+            <div class="modal-content">
+                <span id="close-modal" class="close-btn">&times;</span>
+                <h3>Flugplan konfigurieren</h3>
+                <form id="flightplan-form">
+                    <input type="hidden" id="fp-field-id">
+                    <div class="form-group">
+                        <label for="fp-path-distance">Abstand zwischen den Pfaden (m):</label>
+                        <input type="number" id="fp-path-distance" value="10" step="0.5">
+                    </div>
+                    <div class="form-group">
+                        <label for="fp-border-distance">Abstand zum Rand (m):</label>
+                        <input type="number" id="fp-border-distance" value="5" step="0.5">
+                    </div>
+                    <div class="form-group">
+                        <label for="fp-orientation">Ausrichtung (0-360°, leer für automatisch):</label>
+                        <input type="number" id="fp-orientation" placeholder="Automatisch" min="0" max="360" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="fp-speed">Fluggeschwindigkeit (m/s):</label>
+                        <input type="number" id="fp-speed" value="10" step="1">
+                    </div>
+                    <div id="fp-stats" class="fp-stats hidden">
+                        <p>Pfadlänge: <span id="fp-length">0</span> m</p>
+                        <p>Geschätzte Dauer: <span id="fp-duration">0</span> min</p>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" id="btn-reverse-fp" class="btn secondary hidden">Startpunkt wechseln</button>
+                        <button type="button" id="btn-generate-fp" class="btn success">Flugplan generieren</button>
+                        <button type="button" id="btn-export-fp-kml" class="btn secondary hidden">DJI KML Export</button>
+                    </div>
+                </form>
+            </div>
+        </div>
         <div id="step-indicators" class="steps">
             <span id="step-1-indicator" class="step active">1. Persönliche Daten</span>
             <span id="step-2-indicator" class="step">2. Schläge & Karte</span>
@@ -112,6 +148,7 @@
     <!-- Scripts -->
     <!-- External Libs -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet-geometryutil@0.10.3/src/leaflet.geometryutil.min.js"></script>
     <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
