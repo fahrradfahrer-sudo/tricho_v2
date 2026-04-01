@@ -12,8 +12,8 @@ class App {
         this.btnSearchPlz = document.getElementById('btn-search-plz');
         this.searchPlzInput = document.getElementById('search-postal-code');
 
-        this.modal = document.getElementById('flightplan-modal');
-        this.closeModal = document.getElementById('close-modal');
+        this.fpSidebar = document.getElementById('flightplan-sidebar');
+        this.closeFPSidebar = document.getElementById('close-fp-sidebar');
         this.btnGenerateFP = document.getElementById('btn-generate-fp');
         this.btnReverseFP = document.getElementById('btn-reverse-fp');
         this.btnExportFPKML = document.getElementById('btn-export-fp-kml');
@@ -88,13 +88,16 @@ class App {
             this.mapManager.centerMapByPostalCode(this.searchPlzInput.value);
         });
 
-        this.closeModal.addEventListener('click', () => {
-            this.modal.classList.add('hidden');
+        this.closeFPSidebar.addEventListener('click', () => {
+            this.fpSidebar.classList.add('hidden');
+            setTimeout(() => this.mapManager.map.invalidateSize(), 300);
         });
 
         this.btnGenerateFP.addEventListener('click', () => {
             this.generateFlightPlan();
         });
+
+        this.initFPInputs();
 
         this.btnExportFPKML.addEventListener('click', () => {
             this.exportFlightPlanKML();
@@ -183,6 +186,36 @@ class App {
         }
     }
 
+    initFPInputs() {
+        const syncInput = (sliderId, inputId, valSpanId, isOrientation = false) => {
+            const slider = document.getElementById(sliderId);
+            const input = document.getElementById(inputId);
+            const valSpan = document.getElementById(valSpanId);
+
+            const update = (val, source) => {
+                if (source !== 'slider') slider.value = val;
+                if (source !== 'input') input.value = val;
+
+                if (isOrientation && val == 0) {
+                    valSpan.textContent = "Auto";
+                    input.value = ""; // Empty for auto
+                } else {
+                    valSpan.textContent = val;
+                }
+                this.generateFlightPlan();
+            };
+
+            slider.addEventListener('input', (e) => update(e.target.value, 'slider'));
+            input.addEventListener('change', (e) => update(e.target.value, 'input'));
+        };
+
+        syncInput('slider-fp-path-distance', 'fp-path-distance', 'val-fp-path-distance');
+        syncInput('slider-fp-border-distance', 'fp-border-distance', 'val-fp-border-distance');
+        syncInput('slider-fp-orientation', 'fp-orientation', 'val-fp-orientation', true);
+        syncInput('slider-fp-speed', 'fp-speed', 'val-fp-speed');
+        syncInput('slider-fp-height', 'fp-height', 'val-fp-height');
+    }
+
     updateFieldList() {
         this.fieldList.innerHTML = '';
 
@@ -207,7 +240,7 @@ class App {
                 <p>Fläche: ${field.area.toFixed(2)} Ha</p>
                 <div class="actions">
                     <button onclick="app.zoomToField('${field.id}')" class="btn secondary">Zoom</button>
-                    <button onclick="app.openFlightPlanModal('${field.id}')" class="btn secondary">Flugplan</button>
+                    <button onclick="app.openFlightPlanSidebar('${field.id}')" class="btn secondary">Flugplan</button>
                     <button onclick="app.exportFieldKML('${field.id}')" class="btn secondary">KML</button>
                     <button onclick="app.editFieldName('${field.id}')" class="btn secondary">Umbenennen</button>
                     <button onclick="app.deleteField('${field.id}')" class="btn">Löschen</button>
@@ -224,10 +257,11 @@ class App {
         }
     }
 
-    openFlightPlanModal(id) {
+    openFlightPlanSidebar(id) {
         const prevId = document.getElementById('fp-field-id').value;
         document.getElementById('fp-field-id').value = id;
-        this.modal.classList.remove('hidden');
+        this.fpSidebar.classList.remove('hidden');
+        this.mapManager.map.invalidateSize();
         this.zoomToField(id);
 
         if (prevId !== id) {
@@ -240,6 +274,7 @@ class App {
                 this.mapManager.drawnItems.removeLayer(this.currentFlightPath);
                 this.currentFlightPath = null;
             }
+            this.generateFlightPlan();
         } else if (this.currentFlightPath) {
             // Same field, show stats and export button if path exists
             document.getElementById('fp-stats').classList.remove('hidden');
@@ -247,6 +282,8 @@ class App {
             this.btnReverseFP.classList.remove('hidden');
             const speed = parseFloat(document.getElementById('fp-speed').value) || 10;
             this.updateFPStats(speed);
+        } else {
+            this.generateFlightPlan();
         }
     }
 
@@ -460,8 +497,9 @@ class App {
         const field = this.fields.find(f => String(f.id) === String(id));
         const name = (field ? field.name : 'Flugplan') + '_DJI';
 
+        const height = parseFloat(document.getElementById('fp-height').value) || 15;
         const latlngs = this.currentFlightPath.getLatLngs();
-        const coords = latlngs.map(ll => `${ll.lng},${ll.lat},0`).join(' ');
+        const coords = latlngs.map(ll => `${ll.lng},${ll.lat},${height}`).join(' ');
 
         const escapeXml = (unsafe) => {
             return unsafe.replace(/[<>&'"]/g, (c) => {
