@@ -28,6 +28,7 @@ class App {
 
     initMap() {
         this.mapManager = new MapManager('map');
+        this.wpLayerGroup = L.layerGroup().addTo(this.mapManager.map);
 
         this.mapManager.onFieldAdded = (layer, name) => {
             const field = {
@@ -53,6 +54,7 @@ class App {
             if (this.currentFlightPath && L.stamp(this.currentFlightPath) === id) {
                 const speed = parseFloat(document.getElementById('fp-speed').value) || 10;
                 this.updateFPStats(speed);
+                this.updateWaypointMarkers();
                 return;
             }
 
@@ -277,6 +279,7 @@ class App {
             if (this.currentFlightPath) {
                 this.mapManager.drawnItems.removeLayer(this.currentFlightPath);
                 this.currentFlightPath = null;
+                this.wpLayerGroup.clearLayers();
             }
             this.generateFlightPlan();
         } else if (this.currentFlightPath) {
@@ -286,6 +289,7 @@ class App {
             this.btnReverseFP.classList.remove('hidden');
             const speed = parseFloat(document.getElementById('fp-speed').value) || 10;
             this.updateFPStats(speed);
+            this.updateWaypointMarkers();
         } else {
             this.generateFlightPlan();
         }
@@ -457,11 +461,12 @@ class App {
                             const connection = turf.lineString([prev, p1]);
                             // Check if connection is strictly inside the field.
                             if (!turf.booleanWithin(connection, turfPoly)) {
-                                let borderPath = this.getBorderPath(prev, p1, buffered, 0.001);
-                                let testPath = [prev, ...borderPath, p1];
-                                if (borderPath.length <= 1 || !turf.booleanWithin(turf.lineString(testPath), turfPoly)) {
-                                    borderPath = this.getBorderPath(prev, p1, turfPoly, 1.0);
+                                // Try boundary-following on buffered boundary first, then on field boundary.
+                                let borderPath = this.getBorderPath(prev, p1, buffered, 0.1);
+                                if (borderPath.length <= 1) {
+                                    borderPath = this.getBorderPath(prev, p1, turfPoly, 0.1);
                                 }
+
                                 borderPath.forEach(p => {
                                     if (turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                                         pathPoints.push(p);
@@ -490,9 +495,13 @@ class App {
         if (this.currentFlightPath) {
             this.mapManager.drawnItems.removeLayer(this.currentFlightPath);
         }
+        this.wpLayerGroup.clearLayers();
 
         const latlngs = pathPoints.map(p => [p[1], p[0]]);
         this.currentFlightPath = L.polyline(latlngs, { color: 'red', weight: 3 });
+
+        // Add waypoint markers
+        this.updateWaypointMarkers();
 
         // For Leaflet.draw editing, the layer must be in the featureGroup
         this.mapManager.drawnItems.addLayer(this.currentFlightPath);
@@ -509,13 +518,27 @@ class App {
         const latlngs = this.currentFlightPath.getLatLngs();
         latlngs.reverse();
         this.currentFlightPath.setLatLngs(latlngs);
-        // Stats don't change, but we could trigger an update if needed
+        this.updateWaypointMarkers();
     }
 
-    getBorderPath(p1, p2, polygon, toleranceKm = 0.001) {
+    updateWaypointMarkers() {
+        if (!this.currentFlightPath) return;
+        this.wpLayerGroup.clearLayers();
+        const latlngs = this.currentFlightPath.getLatLngs();
+        latlngs.forEach((ll, idx) => {
+            const icon = L.divIcon({
+                className: 'wp-number-icon',
+                html: `<span>${idx + 1}</span>`,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
+            });
+            L.marker(ll, { icon: icon, interactive: false }).addTo(this.wpLayerGroup);
+        });
+    }
+
+    getBorderPath(p1, p2, polygon, toleranceKm = 0.01) {
         try {
             const boundary = turf.polygonToLine(polygon);
-            // Handle FeatureCollection or single line
             const features = (boundary.type === 'FeatureCollection') ? boundary.features : [boundary];
 
             let bestPath = [p2];
@@ -523,38 +546,45 @@ class App {
 
             features.forEach(feature => {
                 const line = feature.geometry || feature;
-                // turf.lineSlice can be unpredictable with closed loops.
-                // We'll use a more robust approach by finding the points on the line and then
-                // determining the two possible paths along the ring.
+                const coords = line.coordinates || (line.geometry && line.geometry.coordinates);
+                if (!coords || coords.length < 2) return;
+
                 const pt1 = turf.nearestPointOnLine(line, p1);
                 const pt2 = turf.nearestPointOnLine(line, p2);
 
-                if (pt1.properties.dist < toleranceKm && pt2.properties.dist < toleranceKm) {
-                    const coords = line.coordinates || (line.geometry && line.geometry.coordinates);
+                // Even if points are not exactly on the line, we use the nearest indices.
+                if (pt1.properties.index !== undefined && pt2.properties.index !== undefined) {
                     const idx1 = pt1.properties.index;
                     const idx2 = pt2.properties.index;
 
-                    // Path 1: Forward
+                    // Path 1: Forward along the ring
                     let path1 = [pt1.geometry.coordinates];
                     let i = (idx1 + 1) % coords.length;
-                    while (i !== (idx2 + 1) % coords.length) {
+                    // Safety limit to avoid infinite loops on malformed rings
+                    let safety1 = 0;
+                    while (i !== (idx2 + 1) % coords.length && safety1 < coords.length * 2) {
                         path1.push(coords[i]);
                         i = (i + 1) % coords.length;
+                        safety1++;
                     }
                     path1.push(pt2.geometry.coordinates);
 
-                    // Path 2: Backward
+                    // Path 2: Backward along the ring
                     let path2 = [pt1.geometry.coordinates];
                     let j = idx1;
-                    while (j !== idx2) {
+                    let safety2 = 0;
+                    while (j !== idx2 && safety2 < coords.length * 2) {
                         path2.push(coords[j]);
                         j = (j - 1 + coords.length) % coords.length;
+                        safety2++;
                     }
                     path2.push(pt2.geometry.coordinates);
 
                     const len1 = turf.length(turf.lineString(path1));
                     const len2 = turf.length(turf.lineString(path2));
 
+                    // Heuristic: Prefer the shorter path that stays within the field.
+                    // But for simplicity, we first check which one is shorter.
                     if (len1 < minDist) {
                         minDist = len1;
                         bestPath = path1;
@@ -739,6 +769,16 @@ class App {
         if (field) {
             const layer = this.mapManager.drawnItems.getLayer(id);
             if (layer) {
+                const currentFpId = document.getElementById('fp-field-id').value;
+                if (String(currentFpId) === String(id)) {
+                    if (this.currentFlightPath) {
+                        this.mapManager.drawnItems.removeLayer(this.currentFlightPath);
+                        this.currentFlightPath = null;
+                    }
+                    this.wpLayerGroup.clearLayers();
+                    this.fpSidebar.classList.add('hidden');
+                }
+
                 this.mapManager.drawnItems.removeLayer(layer);
                 this.fields = this.fields.filter(f => String(f.id) !== String(id));
                 this.updateFieldList();
