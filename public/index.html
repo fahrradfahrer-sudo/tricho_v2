@@ -15,41 +15,6 @@
     <div id="app" class="container">
         <h1>Kundenantrag - Schlagverwaltung</h1>
 
-        <!-- Flight Plan Modal -->
-        <div id="flightplan-modal" class="modal hidden">
-            <div class="modal-content">
-                <span id="close-modal" class="close-btn">&times;</span>
-                <h3>Flugplan konfigurieren</h3>
-                <form id="flightplan-form">
-                    <input type="hidden" id="fp-field-id">
-                    <div class="form-group">
-                        <label for="fp-path-distance">Abstand zwischen den Pfaden (m):</label>
-                        <input type="number" id="fp-path-distance" value="10" step="0.5">
-                    </div>
-                    <div class="form-group">
-                        <label for="fp-border-distance">Abstand zum Rand (m):</label>
-                        <input type="number" id="fp-border-distance" value="5" step="0.5">
-                    </div>
-                    <div class="form-group">
-                        <label for="fp-orientation">Ausrichtung (0-360°, leer für automatisch):</label>
-                        <input type="number" id="fp-orientation" placeholder="Automatisch" min="0" max="360" step="1">
-                    </div>
-                    <div class="form-group">
-                        <label for="fp-speed">Fluggeschwindigkeit (m/s):</label>
-                        <input type="number" id="fp-speed" value="10" step="1">
-                    </div>
-                    <div id="fp-stats" class="fp-stats hidden">
-                        <p>Pfadlänge: <span id="fp-length">0</span> m</p>
-                        <p>Geschätzte Dauer: <span id="fp-duration">0</span> min</p>
-                    </div>
-                    <div class="modal-actions">
-                        <button type="button" id="btn-reverse-fp" class="btn secondary hidden">Startpunkt wechseln</button>
-                        <button type="button" id="btn-generate-fp" class="btn success">Flugplan generieren</button>
-                        <button type="button" id="btn-export-fp-kml" class="btn secondary hidden">DJI KML Export</button>
-                    </div>
-                </form>
-            </div>
-        </div>
         <div id="step-indicators" class="steps">
             <span id="step-1-indicator" class="step active">1. Persönliche Daten</span>
             <span id="step-2-indicator" class="step">2. Schläge & Karte</span>
@@ -141,6 +106,54 @@
                     </div>
                 </div>
                 <div id="map"></div>
+                <div id="flightplan-sidebar" class="sidebar right-sidebar hidden">
+                    <span id="close-fp-sidebar" class="close-btn">&times;</span>
+                    <h3>Flugplan</h3>
+                    <form id="flightplan-form">
+                        <input type="hidden" id="fp-field-id">
+
+                        <div class="form-group slider-group">
+                            <label for="fp-path-distance">Pfadabstand (m): <span id="val-fp-path-distance">10</span></label>
+                            <input type="range" id="slider-fp-path-distance" min="1" max="50" step="0.5" value="10">
+                            <input type="number" id="fp-path-distance" value="10" step="0.5">
+                        </div>
+
+                        <div class="form-group slider-group">
+                            <label for="fp-border-distance">Randabstand (m): <span id="val-fp-border-distance">5</span></label>
+                            <input type="range" id="slider-fp-border-distance" min="0" max="20" step="0.5" value="5">
+                            <input type="number" id="fp-border-distance" value="5" step="0.5">
+                        </div>
+
+                        <div class="form-group slider-group">
+                            <label for="fp-orientation">Ausrichtung (°): <span id="val-fp-orientation">Auto</span></label>
+                            <input type="range" id="slider-fp-orientation" min="0" max="360" step="1" value="0">
+                            <input type="number" id="fp-orientation" placeholder="Automatisch" min="0" max="360" step="1">
+                        </div>
+
+                        <div class="form-group slider-group">
+                            <label for="fp-speed">Tempo (m/s): <span id="val-fp-speed">10</span></label>
+                            <input type="range" id="slider-fp-speed" min="1" max="25" step="1" value="10">
+                            <input type="number" id="fp-speed" value="10" step="1">
+                        </div>
+
+                        <div class="form-group slider-group">
+                            <label for="fp-height">Flughöhe (m): <span id="val-fp-height">15</span></label>
+                            <input type="range" id="slider-fp-height" min="1" max="120" step="1" value="15">
+                            <input type="number" id="fp-height" value="15" step="1">
+                        </div>
+
+                        <div id="fp-stats" class="fp-stats hidden">
+                            <p>Pfadlänge: <span id="fp-length">0</span> m</p>
+                            <p>Geschätzte Dauer: <span id="fp-duration">0</span> min</p>
+                        </div>
+
+                        <div class="actions vertical">
+                            <button type="button" id="btn-reverse-fp" class="btn secondary small hidden">Startpunkt drehen</button>
+                            <button type="button" id="btn-generate-fp" class="btn success small">Generieren</button>
+                            <button type="button" id="btn-export-fp-kml" class="btn secondary small hidden">KML Export</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
