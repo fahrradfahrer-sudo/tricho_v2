@@ -175,12 +175,94 @@ class App {
                 <h4>${field.name}</h4>
                 <p>Fläche: ${field.area.toFixed(2)} Ha</p>
                 <div class="actions">
+                    <button onclick="app.zoomToField('${field.id}')" class="btn secondary">Zoom</button>
+                    <button onclick="app.exportFieldKML('${field.id}')" class="btn secondary">KML</button>
                     <button onclick="app.editFieldName('${field.id}')" class="btn secondary">Umbenennen</button>
                     <button onclick="app.deleteField('${field.id}')" class="btn">Löschen</button>
                 </div>
             `;
             this.fieldList.appendChild(div);
         });
+    }
+
+    zoomToField(id) {
+        const layer = this.mapManager.drawnItems.getLayer(id);
+        if (layer) {
+            this.mapManager.map.fitBounds(layer.getBounds(), { maxZoom: 18 });
+        }
+    }
+
+    exportFieldKML(id) {
+        const field = this.fields.find(f => String(f.id) === String(id));
+        if (field) {
+            const geoJson = JSON.parse(field.geometry);
+            const kmlContent = this.convertToKML(geoJson, field.name);
+            const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${field.name}.kml`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    }
+
+    convertToKML(geometry, name) {
+        const escapeXml = (unsafe) => {
+            return unsafe.replace(/[<>&'"]/g, (c) => {
+                switch (c) {
+                    case '<': return '&lt;';
+                    case '>': return '&gt;';
+                    case '&': return '&amp;';
+                    case '\'': return '&apos;';
+                    case '"': return '&quot;';
+                }
+            });
+        };
+
+        const renderPolygon = (coords) => {
+            const outerBoundary = coords[0].map(coord => `${coord[0]},${coord[1]},0`).join(' ');
+            let innerBoundaries = '';
+            if (coords.length > 1) {
+                for (let i = 1; i < coords.length; i++) {
+                    const innerBoundary = coords[i].map(coord => `${coord[0]},${coord[1]},0`).join(' ');
+                    innerBoundaries += `
+        <innerBoundaryIs>
+          <LinearRing>
+            <coordinates>${innerBoundary}</coordinates>
+          </LinearRing>
+        </innerBoundaryIs>`;
+                }
+            }
+            return `
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>${outerBoundary}</coordinates>
+          </LinearRing>
+        </outerBoundaryIs>${innerBoundaries}
+      </Polygon>`;
+        };
+
+        let geometryKml = '';
+        if (geometry.type === 'Polygon') {
+            geometryKml = renderPolygon(geometry.coordinates);
+        } else if (geometry.type === 'MultiPolygon') {
+            geometryKml = `
+      <MultiGeometry>${geometry.coordinates.map(polyCoords => renderPolygon(polyCoords)).join('')}
+      </MultiGeometry>`;
+        }
+
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Placemark>
+      <name>${escapeXml(name)}</name>${geometryKml}
+    </Placemark>
+  </Document>
+</kml>`;
     }
 
     editFieldName(id) {

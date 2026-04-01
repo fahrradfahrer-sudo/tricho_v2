@@ -154,6 +154,7 @@ body {
 
 .field-item .actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 5px;
 }
 
