@@ -8,13 +8,13 @@ body {
 .container {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 10px 20px;
 }
 
 .steps {
     display: flex;
     justify-content: center;
-    margin-bottom: 20px;
+    margin-bottom: 10px;
 }
 
 .step {
@@ -110,13 +110,13 @@ body {
 /* Map Layout */
 .map-layout {
     display: flex;
-    height: 700px; /* Increased height for better view */
+    height: 600px; /* Reduced height for better fit */
 }
 
 .sidebar {
     width: 300px;
     background: #fff;
-    padding: 20px;
+    padding: 15px; /* Reduced padding */
     border-right: 1px solid #ccc;
     overflow-y: auto;
     flex-shrink: 0;
