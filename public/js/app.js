@@ -356,13 +356,8 @@ class App {
 
                                 // Connection to the new ring/polygon
                                 const p1 = ring[0];
-                                const connection = turf.lineString([lastPoint, p1]);
-                                if (!turf.booleanWithin(connection, turfPoly)) {
-                                    let borderPath = this.getBorderPath(lastPoint, p1, buffered, 0.001);
-                                    let testPath = [lastPoint, ...borderPath, p1];
-                                    if (borderPath.length <= 1 || !turf.booleanWithin(turf.lineString(testPath), turfPoly)) {
-                                        borderPath = this.getBorderPath(lastPoint, p1, turfPoly, 1.0);
-                                    }
+                                if (!this.isPathInside(lastPoint, p1, turfPoly)) {
+                                    let borderPath = this.getBorderPath(lastPoint, p1, turfPoly);
                                     borderPath.forEach(p => {
                                         if (turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                                             pathPoints.push(p);
@@ -458,15 +453,8 @@ class App {
                         const prev = pathPoints[pathPoints.length - 1];
                         // If p1 is same as prev, skip connection check
                         if (turf.distance(prev, p1, { units: 'meters' }) > 0.1) {
-                            const connection = turf.lineString([prev, p1]);
-                            // Check if connection is strictly inside the field.
-                            if (!turf.booleanWithin(connection, turfPoly)) {
-                                // Try boundary-following on buffered boundary first, then on field boundary.
-                                let borderPath = this.getBorderPath(prev, p1, buffered, 0.1);
-                                if (borderPath.length <= 1) {
-                                    borderPath = this.getBorderPath(prev, p1, turfPoly, 0.1);
-                                }
-
+                            if (!this.isPathInside(prev, p1, turfPoly)) {
+                                let borderPath = this.getBorderPath(prev, p1, turfPoly);
                                 borderPath.forEach(p => {
                                     if (turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                                         pathPoints.push(p);
@@ -536,70 +524,109 @@ class App {
         });
     }
 
-    getBorderPath(p1, p2, polygon, toleranceKm = 0.01) {
+    isPathInside(p1, p2, polygon) {
+        const line = turf.lineString([p1, p2]);
+        if (turf.booleanWithin(line, polygon)) return true;
+
+        const len = turf.length(line, { units: 'meters' });
+        if (len < 0.2) return true;
+
+        // Sample points to check for concavity shortcuts
+        const step = 1.0; // 1 meter steps
+        const numSamples = Math.ceil(len / step);
+        for (let i = 1; i < numSamples; i++) {
+            const p = turf.along(line, i * step, { units: 'meters' });
+            if (!turf.booleanPointInPolygon(p, polygon)) return false;
+        }
+        return true;
+    }
+
+    getBorderPath(p1, p2, polygon) {
         try {
+            if (this.isPathInside(p1, p2, polygon)) return [p2];
+
+            const line = turf.lineString([p1, p2]);
             const boundary = turf.polygonToLine(polygon);
-            const features = (boundary.type === 'FeatureCollection') ? boundary.features : [boundary];
+            const intersect = turf.lineIntersect(line, boundary);
 
-            let bestPath = [p2];
-            let minDist = Infinity;
+            if (intersect.features.length < 2) {
+                return [p2]; // Fallback
+            }
 
-            features.forEach(feature => {
-                const line = feature.geometry || feature;
-                const coords = line.coordinates || (line.geometry && line.geometry.coordinates);
-                if (!coords || coords.length < 2) return;
+            let pts = intersect.features.map(f => f.geometry.coordinates);
+            // Sort by distance from p1
+            pts.sort((a, b) => turf.distance(p1, a) - turf.distance(p1, b));
 
-                const pt1 = turf.nearestPointOnLine(line, p1);
-                const pt2 = turf.nearestPointOnLine(line, p2);
+            const allPoints = [p1, ...pts, p2];
+            let resultPath = [];
 
-                // Even if points are not exactly on the line, we use the nearest indices.
-                if (pt1.properties.index !== undefined && pt2.properties.index !== undefined) {
-                    const idx1 = pt1.properties.index;
-                    const idx2 = pt2.properties.index;
+            for (let i = 0; i < allPoints.length - 1; i++) {
+                const curr = allPoints[i];
+                const next = allPoints[i + 1];
 
-                    // Path 1: Forward along the ring
-                    let path1 = [pt1.geometry.coordinates];
-                    let i = (idx1 + 1) % coords.length;
-                    // Safety limit to avoid infinite loops on malformed rings
-                    let safety1 = 0;
-                    while (i !== (idx2 + 1) % coords.length && safety1 < coords.length * 2) {
-                        path1.push(coords[i]);
-                        i = (i + 1) % coords.length;
-                        safety1++;
-                    }
-                    path1.push(pt2.geometry.coordinates);
-
-                    // Path 2: Backward along the ring
-                    let path2 = [pt1.geometry.coordinates];
-                    let j = idx1;
-                    let safety2 = 0;
-                    while (j !== idx2 && safety2 < coords.length * 2) {
-                        path2.push(coords[j]);
-                        j = (j - 1 + coords.length) % coords.length;
-                        safety2++;
-                    }
-                    path2.push(pt2.geometry.coordinates);
-
-                    const len1 = turf.length(turf.lineString(path1));
-                    const len2 = turf.length(turf.lineString(path2));
-
-                    // Heuristic: Prefer the shorter path that stays within the field.
-                    // But for simplicity, we first check which one is shorter.
-                    if (len1 < minDist) {
-                        minDist = len1;
-                        bestPath = path1;
-                    }
-                    if (len2 < minDist) {
-                        minDist = len2;
-                        bestPath = path2;
-                    }
+                if (this.isPathInside(curr, next, polygon)) {
+                    resultPath.push(next);
+                } else {
+                    const bPath = this.getBorderPathOnBoundary(curr, next, polygon);
+                    bPath.forEach(p => {
+                        if (resultPath.length === 0 || turf.distance(resultPath[resultPath.length - 1], p, { units: 'meters' }) > 0.1) {
+                            resultPath.push(p);
+                        }
+                    });
                 }
-            });
-            return bestPath;
+            }
+            if (resultPath.length === 0 || turf.distance(resultPath[resultPath.length - 1], p2, { units: 'meters' }) > 0.1) {
+                resultPath.push(p2);
+            }
+            return resultPath;
         } catch (e) {
             console.error("Error in getBorderPath", e);
             return [p2];
         }
+    }
+
+    getBorderPathOnBoundary(p1, p2, polygon) {
+        const boundary = turf.polygonToLine(polygon);
+        const features = (boundary.type === 'FeatureCollection') ? boundary.features : [boundary];
+
+        let bestPath = [p2];
+        let minDist = Infinity;
+
+        features.forEach(feature => {
+            const line = feature.geometry || feature;
+            const coords = line.coordinates || (line.geometry && line.geometry.coordinates);
+            if (!coords || coords.length < 2) return;
+
+            const pt1 = turf.nearestPointOnLine(line, p1);
+            const pt2 = turf.nearestPointOnLine(line, p2);
+
+            const idx1 = pt1.properties.index;
+            const idx2 = pt2.properties.index;
+
+            const pathF = this.walkRing(coords, idx1, idx2, 1, pt1.geometry.coordinates, pt2.geometry.coordinates);
+            const pathB = this.walkRing(coords, idx1, idx2, -1, pt1.geometry.coordinates, pt2.geometry.coordinates);
+
+            const dF = turf.length(turf.lineString(pathF));
+            const dB = turf.length(turf.lineString(pathB));
+
+            if (dF < minDist) { minDist = dF; bestPath = pathF; }
+            if (dB < minDist) { minDist = dB; bestPath = pathB; }
+        });
+        return bestPath;
+    }
+
+    walkRing(coords, idx1, idx2, direction, startPt, endPt) {
+        let path = [startPt];
+        let i = direction === 1 ? (idx1 + 1) % coords.length : idx1;
+        const targetIdx = direction === 1 ? (idx2 + 1) % coords.length : idx2;
+        let safety = 0;
+        while (i !== targetIdx && safety < coords.length * 2) {
+            path.push(coords[i]);
+            i = direction === 1 ? (i + 1) % coords.length : (i - 1 + coords.length) % coords.length;
+            safety++;
+        }
+        path.push(endPt);
+        return path;
     }
 
     calculateOptimalOrientation(polygon) {
