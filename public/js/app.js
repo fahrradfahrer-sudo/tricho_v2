@@ -356,8 +356,8 @@ class App {
 
                                 // Connection to the new ring/polygon
                                 const p1 = ring[0];
-                                if (!this.isPathInside(lastPoint, p1, turfPoly)) {
-                                    let borderPath = this.getBorderPath(lastPoint, p1, turfPoly);
+                            if (!this.isPathInside(lastPoint, p1, buffered)) {
+                                let borderPath = this.getBorderPath(lastPoint, p1, buffered);
                                     borderPath.forEach(p => {
                                         if (turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                                             pathPoints.push(p);
@@ -453,8 +453,8 @@ class App {
                         const prev = pathPoints[pathPoints.length - 1];
                         // If p1 is same as prev, skip connection check
                         if (turf.distance(prev, p1, { units: 'meters' }) > 0.1) {
-                            if (!this.isPathInside(prev, p1, turfPoly)) {
-                                let borderPath = this.getBorderPath(prev, p1, turfPoly);
+                            if (!this.isPathInside(prev, p1, buffered)) {
+                                let borderPath = this.getBorderPath(prev, p1, buffered);
                                 borderPath.forEach(p => {
                                     if (turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                                         pathPoints.push(p);
