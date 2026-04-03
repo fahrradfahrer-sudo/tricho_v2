@@ -230,3 +230,17 @@ body {
     color: red;
     opacity: 0.8;
 }
+
+.wp-number-icon.wp-start {
+    background: #28a745;
+    color: white;
+    border-color: #1e7e34;
+    z-index: 1000 !important;
+}
+
+.wp-number-icon.wp-end {
+    background: #dc3545;
+    color: white;
+    border-color: #bd2130;
+    z-index: 1000 !important;
+}
