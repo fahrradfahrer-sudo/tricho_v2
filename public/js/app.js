@@ -356,8 +356,8 @@ class App {
 
                                 // Connection to the new ring/polygon
                                 const p1 = ring[0];
-                            if (!this.isPathInside(lastPoint, p1, buffered)) {
-                                let borderPath = this.getBorderPath(lastPoint, p1, buffered);
+                                if (!this.isPathInside(lastPoint, p1, buffered)) {
+                                    let borderPath = this.getBorderPath(lastPoint, p1, buffered);
                                     borderPath.forEach(p => {
                                         if (turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                                             pathPoints.push(p);
@@ -546,18 +546,26 @@ class App {
             if (this.isPathInside(p1, p2, polygon)) return [p2];
 
             const line = turf.lineString([p1, p2]);
-            const boundary = turf.polygonToLine(polygon);
+            const boundary = turf.flatten(turf.polygonToLine(polygon));
             const intersect = turf.lineIntersect(line, boundary);
 
             if (intersect.features.length < 2) {
                 return [p2]; // Fallback
             }
 
+            // Get all intersection points and sort them along the line
             let pts = intersect.features.map(f => f.geometry.coordinates);
-            // Sort by distance from p1
             pts.sort((a, b) => turf.distance(p1, a) - turf.distance(p1, b));
 
-            const allPoints = [p1, ...pts, p2];
+            // Unique points (avoid precision issues)
+            let uniquePts = [pts[0]];
+            for (let i = 1; i < pts.length; i++) {
+                if (turf.distance(uniquePts[uniquePts.length - 1], pts[i], { units: 'meters' }) > 0.1) {
+                    uniquePts.push(pts[i]);
+                }
+            }
+
+            const allPoints = [p1, ...uniquePts, p2];
             let resultPath = [];
 
             for (let i = 0; i < allPoints.length - 1; i++) {
@@ -565,7 +573,9 @@ class App {
                 const next = allPoints[i + 1];
 
                 if (this.isPathInside(curr, next, polygon)) {
-                    resultPath.push(next);
+                    if (resultPath.length === 0 || turf.distance(resultPath[resultPath.length - 1], next, { units: 'meters' }) > 0.1) {
+                        resultPath.push(next);
+                    }
                 } else {
                     const bPath = this.getBorderPathOnBoundary(curr, next, polygon);
                     bPath.forEach(p => {
@@ -575,9 +585,6 @@ class App {
                     });
                 }
             }
-            if (resultPath.length === 0 || turf.distance(resultPath[resultPath.length - 1], p2, { units: 'meters' }) > 0.1) {
-                resultPath.push(p2);
-            }
             return resultPath;
         } catch (e) {
             console.error("Error in getBorderPath", e);
@@ -586,15 +593,13 @@ class App {
     }
 
     getBorderPathOnBoundary(p1, p2, polygon) {
-        const boundary = turf.polygonToLine(polygon);
-        const features = (boundary.type === 'FeatureCollection') ? boundary.features : [boundary];
-
+        const boundary = turf.flatten(turf.polygonToLine(polygon));
         let bestPath = [p2];
         let minDist = Infinity;
 
-        features.forEach(feature => {
-            const line = feature.geometry || feature;
-            const coords = line.coordinates || (line.geometry && line.geometry.coordinates);
+        boundary.features.forEach(feature => {
+            const line = feature.geometry;
+            const coords = line.coordinates;
             if (!coords || coords.length < 2) return;
 
             const pt1 = turf.nearestPointOnLine(line, p1);
@@ -620,6 +625,13 @@ class App {
         let i = direction === 1 ? (idx1 + 1) % coords.length : idx1;
         const targetIdx = direction === 1 ? (idx2 + 1) % coords.length : idx2;
         let safety = 0;
+
+        // Optimization: if direct move on boundary is small, just take end point
+        if (idx1 === idx2) {
+            path.push(endPt);
+            return path;
+        }
+
         while (i !== targetIdx && safety < coords.length * 2) {
             path.push(coords[i]);
             i = direction === 1 ? (i + 1) % coords.length : (i - 1 + coords.length) % coords.length;

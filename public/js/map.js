@@ -9,8 +9,8 @@ class MapManager {
             attribution: '© OpenStreetMap-Mitwirkende'
         });
 
-        // Google Satellite (XYZ Tiles)
-        const googleSat = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
+        // Google Hybrid (Satellite + Labels)
+        const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',{
             maxZoom: 20,
             subdomains:['mt0','mt1','mt2','mt3'],
             attribution: '© Google'
@@ -38,10 +38,10 @@ class MapManager {
             })
         ]);
 
-        googleSat.addTo(this.map);
+        googleHybrid.addTo(this.map);
 
         const baseMaps = {
-            "Google Satellit": googleSat,
+            "Google Satellit": googleHybrid,
             "Satellit WMS (EOX)": satelliteWMS,
             "Satellit mit Beschriftung": hybridWMS,
             "OpenStreetMap": osm
