@@ -212,6 +212,7 @@ class App {
         };
 
         syncInput('slider-fp-path-distance', 'fp-path-distance', 'val-fp-path-distance');
+        syncInput('slider-fp-min-point-distance', 'fp-min-point-distance', 'val-fp-min-point-distance');
         syncInput('slider-fp-border-distance', 'fp-border-distance', 'val-fp-border-distance');
         syncInput('slider-fp-orientation', 'fp-orientation', 'val-fp-orientation', true);
         syncInput('slider-fp-speed', 'fp-speed', 'val-fp-speed');
@@ -303,6 +304,7 @@ class App {
         this.zoomToField(id);
 
         const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
+        const minPointDistRequested = parseFloat(document.getElementById('fp-min-point-distance').value) || 5;
         const borderDistance = parseFloat(document.getElementById('fp-border-distance').value) || 5;
         let orientation = document.getElementById('fp-orientation').value;
         const speed = parseFloat(document.getElementById('fp-speed').value) || 10;
@@ -480,9 +482,9 @@ class App {
         }
 
         // 6. Simplify path to respect minimum distance between points
-        // User requested "at best the same value like distance between flightpath (lane spacing)"
-        // "at least 0.5m"
-        const minPointDist = Math.max(0.5, pathDistance);
+        // User requested a parameter for this, with default 5m.
+        // Also respect a hard minimum of 0.5m for DJI compatibility.
+        const minPointDist = Math.max(0.5, minPointDistRequested);
         pathPoints = this.simplifyPath(pathPoints, minPointDist, buffered);
 
         // 7. Display path
@@ -547,10 +549,11 @@ class App {
     isPathInside(p1, p2, polygon) {
         const line = turf.lineString([p1, p2]);
         const len = turf.length(line, { units: 'meters' });
-        if (len < 0.1) return true;
+        if (len < 0.01) return true;
 
         // Sample points to check for concavity shortcuts
-        const step = Math.min(1.0, len / 5);
+        // Dynamic sampling based on segment length for more reliable boundary checks
+        const step = Math.min(0.2, len / 20);
         const numSamples = Math.ceil(len / step);
         for (let i = 0; i <= numSamples; i++) {
             const dist = Math.min(i * step, len);
@@ -559,7 +562,8 @@ class App {
                 // Precision check: if not in, check distance to boundary
                 const boundary = turf.polygonToLine(polygon);
                 const ptOnLine = turf.nearestPointOnLine(boundary, p, { units: 'meters' });
-                if (ptOnLine.properties.dist > 0.1) return false;
+                // Tolerance 0.01m
+                if (ptOnLine.properties.dist > 0.01) return false;
             }
         }
         return true;
@@ -680,24 +684,13 @@ class App {
         let i = 1;
         while (i < points.length) {
             const lastKept = simplified[simplified.length - 1];
-            const isLast = (i === points.length - 1);
-
-            if (isLast) {
-                if (turf.distance(lastKept, points[i], { units: 'meters' }) > 0.1) {
-                    simplified.push(points[i]);
-                }
-                break;
-            }
 
             // Look ahead to find the furthest point that is still safe to connect to
-            // BUT we must not skip points that are needed for a "detour" around a concavity
-            // If the original path has intermediate points that were added to stay inside,
-            // they will fail the isPathInside check if we try to jump over them.
+            // AND respects the minimum distance if possible.
             let furthestSafeIndex = i;
             for (let j = i; j < points.length; j++) {
                 const d = turf.distance(lastKept, points[j], { units: 'meters' });
 
-                // We stop looking if we've reached a point far enough AND the path is safe
                 if (this.isPathInside(lastKept, points[j], polygon)) {
                     furthestSafeIndex = j;
                     if (d >= minDistance) break;
@@ -711,22 +704,36 @@ class App {
             i = furthestSafeIndex + 1;
         }
 
-        // Final pass: Absolute minimum distance for DJI (0.5m)
-        // This is a safety measure to ensure no two waypoints are too close.
+        // Final pass: Remove redundant (collinear) points and ensure DJI 0.5m minimum
         let finalPath = [simplified[0]];
         for (let i = 1; i < simplified.length; i++) {
             const prev = finalPath[finalPath.length - 1];
             const curr = simplified[i];
+            const next = simplified[i + 1];
+
+            // If there's a next point, check if curr can be skipped (collinear or too close)
+            if (next && this.isPathInside(prev, next, polygon)) {
+                if (this.isRedundant(prev, curr, next) || turf.distance(prev, curr, { units: 'meters' }) < 0.5) {
+                    continue; // Skip curr
+                }
+            }
+
             if (turf.distance(prev, curr, { units: 'meters' }) >= 0.5) {
                 finalPath.push(curr);
             } else if (i === simplified.length - 1 && finalPath.length > 1) {
-                // If the very last point is too close to its predecessor, we replace the predecessor
-                // to ensure the end of the path is accurately captured.
+                // Ensure the very last point is kept if it's too close to predecessor
                 finalPath[finalPath.length - 1] = curr;
             }
         }
 
         return finalPath;
+    }
+
+    isRedundant(p1, p2, p3) {
+        const line = turf.lineString([p1, p3]);
+        const pt = turf.point(p2);
+        const snapped = turf.nearestPointOnLine(line, pt, { units: 'meters' });
+        return snapped.properties.dist < 0.05; // 5cm tolerance for collinearity
     }
 
     calculateOptimalOrientation(polygon) {
