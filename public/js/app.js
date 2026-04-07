@@ -358,7 +358,7 @@ class App {
                                 // Connection to the new ring/polygon
                                 const p1 = ring[0];
                                 if (!this.isPathInside(lastPoint, p1, buffered)) {
-                                    let borderPath = this.getBorderPath(lastPoint, p1, buffered);
+                                    let borderPath = this.getBorderPath(lastPoint, p1, buffered, null, turfPoly); // Pass original poly for validation
                                     borderPath.forEach(p => {
                                         if (turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                                             pathPoints.push(p);
@@ -455,7 +455,7 @@ class App {
                         // If p1 is same as prev, skip connection check
                         if (turf.distance(prev, p1, { units: 'meters' }) > 0.1) {
                             if (!this.isPathInside(prev, p1, buffered)) {
-                                let borderPath = this.getBorderPath(prev, p1, buffered);
+                                let borderPath = this.getBorderPath(prev, p1, buffered, orientation, turfPoly); // Pass original poly for validation
                                 borderPath.forEach(p => {
                                     if (turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                                         pathPoints.push(p);
@@ -545,21 +545,20 @@ class App {
         });
     }
 
-    isPathInside(p1, p2, polygon) {
+    isPathInside(p1, p2, polygon, tolerance = 0.05) {
         const line = turf.lineString([p1, p2]);
         const len = turf.length(line, { units: 'meters' });
         if (len < 0.1) return true;
 
         // 1. Check for intersections with the boundary
-        // If there are intersections (other than the endpoints), the path might be leaving the polygon
         const boundary = turf.polygonToLine(polygon);
         const intersects = turf.lineIntersect(line, boundary);
 
-        // We need to filter out intersections that are essentially the endpoints p1 and p2
+        // Filter out intersections that are essentially the endpoints p1 and p2
         const significantIntersects = intersects.features.filter(f => {
             const d1 = turf.distance(f, p1, { units: 'meters' });
             const d2 = turf.distance(f, p2, { units: 'meters' });
-            return d1 > 0.05 && d2 > 0.05;
+            return d1 > tolerance && d2 > tolerance;
         });
 
         if (significantIntersects.length > 0) {
@@ -567,24 +566,115 @@ class App {
         }
 
         // 2. Sample points to check if the entire segment is inside (handles concavities)
-        // Even with no intersections, a line could be entirely outside if the polygon is concave
-        const step = Math.min(0.5, len / 10);
-        const numSamples = Math.min(100, Math.ceil(len / step));
+        const numSamples = Math.max(5, Math.min(100, Math.ceil(len / 0.5)));
         for (let i = 0; i <= numSamples; i++) {
             const dist = (i / numSamples) * len;
             const p = turf.along(line, dist, { units: 'meters' });
             if (!turf.booleanPointInPolygon(p, polygon)) {
-                // Precision check: if not in, check distance to boundary
+                // Precision check with explicit units for consistency
                 const ptOnLine = turf.nearestPointOnLine(boundary, p, { units: 'meters' });
-                if (ptOnLine.properties.dist > 0.05) return false;
+                if (ptOnLine.properties.dist > tolerance) return false;
             }
         }
         return true;
     }
 
-    getBorderPath(p1, p2, polygon) {
+    getSquareConnection(p1, p2, polygon, orientation) {
+        const angle90 = (orientation + 90) % 360;
+
+        const line1 = turf.lineString([
+            turf.destination(turf.point(p1), 1000, angle90, {units:'meters'}).geometry.coordinates,
+            turf.destination(turf.point(p1), 1000, angle90 + 180, {units:'meters'}).geometry.coordinates
+        ]);
+        const line2 = turf.lineString([
+            turf.destination(turf.point(p2), 1000, orientation, {units:'meters'}).geometry.coordinates,
+            turf.destination(turf.point(p2), 1000, orientation + 180, {units:'meters'}).geometry.coordinates
+        ]);
+        const intersect = turf.lineIntersect(line1, line2);
+
+        if (intersect.features.length > 0) {
+            const corner = intersect.features[0].geometry.coordinates;
+            if (this.isPathInside(p1, corner, polygon) && this.isPathInside(corner, p2, polygon)) {
+                return [corner, p2];
+            }
+        }
+
+        const line3 = turf.lineString([
+            turf.destination(turf.point(p1), 1000, orientation, {units:'meters'}).geometry.coordinates,
+            turf.destination(turf.point(p1), 1000, orientation + 180, {units:'meters'}).geometry.coordinates
+        ]);
+        const line4 = turf.lineString([
+            turf.destination(turf.point(p2), 1000, angle90, {units:'meters'}).geometry.coordinates,
+            turf.destination(turf.point(p2), 1000, angle90 + 180, {units:'meters'}).geometry.coordinates
+        ]);
+        const intersect2 = turf.lineIntersect(line3, line4);
+
+        if (intersect2.features.length > 0) {
+            const corner = intersect2.features[0].geometry.coordinates;
+            if (this.isPathInside(p1, corner, polygon) && this.isPathInside(corner, p2, polygon)) {
+                return [corner, p2];
+            }
+        }
+
+        return null;
+    }
+
+    getSimpleCornerConnection(p1, p2, polygon, originalPoly) {
+        // Option B: Find a single intermediate point (corner) that is safe
+        // First try to find a corner within the safety buffer (polygon)
+        let corner = this._findBestCorner(p1, p2, polygon, polygon);
+        if (corner) return [corner, p2];
+
+        // If no safe corner within the buffer, try finding one that is at least within the field (originalPoly)
+        if (originalPoly) {
+            corner = this._findBestCorner(p1, p2, polygon, originalPoly);
+            if (corner) return [corner, p2];
+        }
+
+        return null;
+    }
+
+    _findBestCorner(p1, p2, boundaryPoly, safetyPoly) {
+        const pathOnBoundary = this.getBorderPathOnBoundary(p1, p2, boundaryPoly);
+        if (pathOnBoundary.length <= 2) return null;
+
+        let bestCorner = null;
+        let maxDist = -1;
+        const directLine = turf.lineString([p1, p2]);
+
+        for (let i = 1; i < pathOnBoundary.length - 1; i++) {
+            const pt = pathOnBoundary[i];
+            const dist = turf.pointToLineDistance(pt, directLine, {units:'meters'});
+            if (dist > maxDist) {
+                // For the corner to be "better", we just need it to be safe.
+                // We check if p1->pt and pt->p2 are within safetyPoly.
+                if (this.isPathInside(p1, pt, safetyPoly) && this.isPathInside(pt, p2, safetyPoly)) {
+                    maxDist = dist;
+                    bestCorner = pt;
+                }
+            }
+        }
+        return bestCorner;
+    }
+
+    getBorderPath(p1, p2, polygon, orientation = null, originalPoly = null) {
         try {
+            // Check if direct path is inside the safety buffer
             if (this.isPathInside(p1, p2, polygon)) return [p2];
+
+            if (orientation !== null) {
+                const square = this.getSquareConnection(p1, p2, polygon, orientation);
+                if (square) return square;
+
+                // Try square connection within original boundary if it clips safety buffer
+                if (originalPoly) {
+                    const squareField = this.getSquareConnection(p1, p2, originalPoly, orientation);
+                    if (squareField) return squareField;
+                }
+            }
+
+            const simpleCorner = this.getSimpleCornerConnection(p1, p2, polygon, originalPoly);
+            if (simpleCorner) return simpleCorner;
 
             const line = turf.lineString([p1, p2]);
             const boundary = turf.flatten(turf.polygonToLine(polygon));
@@ -666,6 +756,13 @@ class App {
                 bestPath = pathB;
             }
         }
+
+        // Simplify boundary path to remove jitter
+        if (bestPath.length > 2) {
+            const simplified = turf.simplify(turf.lineString(bestPath), { tolerance: 0.1, highQuality: true });
+            return simplified.geometry.coordinates;
+        }
+
         return bestPath;
     }
 
@@ -693,38 +790,57 @@ class App {
     simplifyPath(points, minDistance, polygon) {
         if (points.length < 2) return points;
 
+        // Pass 1: Greedy "Visibility" simplification
         let simplified = [points[0]];
-        let i = 0;
-        while (i < points.length - 1) {
-            const lastKept = points[i];
+        let current = 0;
 
-            let furthestSafeIndex = i + 1;
-            for (let j = i + 1; j < points.length; j++) {
-                const d = turf.distance(lastKept, points[j], { units: 'meters' });
-
-                if (this.isPathInside(lastKept, points[j], polygon)) {
-                    furthestSafeIndex = j;
-                    if (d >= minDistance) break;
+        while (current < points.length - 1) {
+            let furthestTarget = current + 1;
+            for (let target = current + 2; target < points.length; target++) {
+                // Use a slightly larger tolerance (0.1m) for visibility checks during simplification
+                // This allows bypassing minor boundary fluctuations that are well within the field.
+                if (this.isPathInside(simplified[simplified.length - 1], points[target], polygon, 0.1)) {
+                    furthestTarget = target;
                 } else {
                     break;
                 }
             }
-
-            simplified.push(points[furthestSafeIndex]);
-            i = furthestSafeIndex;
+            simplified.push(points[furthestTarget]);
+            current = furthestTarget;
         }
 
-        // Final pass: Absolute minimum distance for DJI (0.5m)
-        // This is a safety measure to ensure no two waypoints are too close.
-        let finalPath = [simplified[0]];
-        for (let i = 1; i < simplified.length; i++) {
+        // Pass 2: Collinear point removal
+        let result = [simplified[0]];
+        for (let i = 1; i < simplified.length - 1; i++) {
+            const pPrev = result[result.length - 1];
+            const pCurr = simplified[i];
+            const pNext = simplified[i + 1];
+
+            const b1 = turf.bearing(pPrev, pCurr);
+            const b2 = turf.bearing(pCurr, pNext);
+            let diff = Math.abs(b1 - b2);
+            if (diff > 180) diff = 360 - diff;
+
+            // Increase collinearity threshold to 2.5 degrees for more aggressive pruning
+            if (diff < 2.5) {
+                if (this.isPathInside(pPrev, pNext, polygon, 0.1)) {
+                    continue;
+                }
+            }
+            result.push(pCurr);
+        }
+        result.push(simplified[simplified.length - 1]);
+
+        // Pass 3: DJI-mandated minimum distance (0.5m)
+        let finalPath = [result[0]];
+        for (let i = 1; i < result.length; i++) {
             const prev = finalPath[finalPath.length - 1];
-            const curr = simplified[i];
-            if (turf.distance(prev, curr, { units: 'meters' }) >= 0.5) {
+            const curr = result[i];
+            const dist = turf.distance(prev, curr, { units: 'meters' });
+
+            if (dist >= 0.5) {
                 finalPath.push(curr);
-            } else if (i === simplified.length - 1 && finalPath.length > 1) {
-                // If the very last point is too close to its predecessor, we replace the predecessor
-                // to ensure the end of the path is accurately captured.
+            } else if (i === result.length - 1 && finalPath.length > 1) {
                 finalPath[finalPath.length - 1] = curr;
             }
         }
