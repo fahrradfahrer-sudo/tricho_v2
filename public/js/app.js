@@ -397,7 +397,7 @@ class App {
 
             // Create a grid of lines larger than the bbox to account for rotation
             const gridLines = [];
-            const numLines = Math.ceil(diag / pathDistance) + 2;
+            const numLines = Math.ceil(diag * 1.5 / pathDistance) + 4;
             const startOffset = -(numLines * pathDistance) / 2;
 
             for (let i = 0; i <= numLines; i++) {
@@ -414,6 +414,8 @@ class App {
 
             // 4. Intersect grid lines with buffered polygon and find segments
             let lineSegments = [];
+            const bufferedFeatures = buffered.type === 'FeatureCollection' ? buffered.features : [buffered];
+
             gridLines.forEach((line) => {
                 const intersect = turf.lineIntersect(line, buffered);
                 if (intersect.features.length >= 2) {
@@ -424,9 +426,18 @@ class App {
                     let segmentsOnLine = [];
                     for (let j = 0; j < coords.length - 1; j++) {
                         let p1 = coords[j];
-                        let p2 = coords[j+1];
+                        let p2 = coords[j + 1];
                         let midpoint = turf.midpoint(p1, p2);
-                        if (turf.booleanPointInPolygon(midpoint, buffered)) {
+
+                        let isInside = false;
+                        for (const f of bufferedFeatures) {
+                            if (turf.booleanPointInPolygon(midpoint, f)) {
+                                isInside = true;
+                                break;
+                            }
+                        }
+
+                        if (isInside) {
                             segmentsOnLine.push([p1, p2]);
                         }
                     }
@@ -550,69 +561,75 @@ class App {
         const len = turf.length(line, { units: 'meters' });
         if (len < 0.1) return true;
 
-        // 1. Check for intersections with the boundary
-        const boundary = turf.polygonToLine(polygon);
-        const intersects = turf.lineIntersect(line, boundary);
+        const features = polygon.type === 'FeatureCollection' ? polygon.features : [polygon];
 
-        // Filter out intersections that are essentially the endpoints p1 and p2
-        const significantIntersects = intersects.features.filter(f => {
-            const d1 = turf.distance(f, p1, { units: 'meters' });
-            const d2 = turf.distance(f, p2, { units: 'meters' });
-            return d1 > tolerance && d2 > tolerance;
-        });
+        // 1. Check for intersections with the boundaries of all polygons
+        for (const feature of features) {
+            const boundary = turf.polygonToLine(feature);
+            const intersects = turf.lineIntersect(line, boundary);
 
-        if (significantIntersects.length > 0) {
-            return false;
+            const significantIntersects = intersects.features.filter(f => {
+                const d1 = turf.distance(f, p1, { units: 'meters' });
+                const d2 = turf.distance(f, p2, { units: 'meters' });
+                return d1 > tolerance && d2 > tolerance;
+            });
+
+            if (significantIntersects.length > 0) {
+                return false;
+            }
         }
 
-        // 2. Sample points to check if the entire segment is inside (handles concavities)
+        // 2. Sample points to check if the entire segment is inside
         const numSamples = Math.max(5, Math.min(100, Math.ceil(len / 0.5)));
         for (let i = 0; i <= numSamples; i++) {
             const dist = (i / numSamples) * len;
             const p = turf.along(line, dist, { units: 'meters' });
-            if (!turf.booleanPointInPolygon(p, polygon)) {
-                // Precision check with explicit units for consistency
+
+            let isInside = false;
+            let minDistToAnyBoundary = Infinity;
+
+            for (const feature of features) {
+                if (turf.booleanPointInPolygon(p, feature)) {
+                    isInside = true;
+                    break;
+                }
+                const boundary = turf.polygonToLine(feature);
                 const ptOnLine = turf.nearestPointOnLine(boundary, p, { units: 'meters' });
-                if (ptOnLine.properties.dist > tolerance) return false;
+                if (ptOnLine.properties.dist < minDistToAnyBoundary) {
+                    minDistToAnyBoundary = ptOnLine.properties.dist;
+                }
+            }
+
+            if (!isInside && minDistToAnyBoundary > tolerance) {
+                return false;
             }
         }
         return true;
     }
 
     getSquareConnection(p1, p2, polygon, orientation) {
-        const angle90 = (orientation + 90) % 360;
+        const angles = [orientation, (orientation + 90) % 360, (orientation + 180) % 360, (orientation + 270) % 360];
 
-        const line1 = turf.lineString([
-            turf.destination(turf.point(p1), 1000, angle90, {units:'meters'}).geometry.coordinates,
-            turf.destination(turf.point(p1), 1000, angle90 + 180, {units:'meters'}).geometry.coordinates
-        ]);
-        const line2 = turf.lineString([
-            turf.destination(turf.point(p2), 1000, orientation, {units:'meters'}).geometry.coordinates,
-            turf.destination(turf.point(p2), 1000, orientation + 180, {units:'meters'}).geometry.coordinates
-        ]);
-        const intersect = turf.lineIntersect(line1, line2);
+        for (const a1 of angles) {
+            for (const a2 of angles) {
+                if (Math.abs(a1 - a2) % 180 === 0) continue;
 
-        if (intersect.features.length > 0) {
-            const corner = intersect.features[0].geometry.coordinates;
-            if (this.isPathInside(p1, corner, polygon) && this.isPathInside(corner, p2, polygon)) {
-                return [corner, p2];
-            }
-        }
+                const line1 = turf.lineString([
+                    turf.destination(turf.point(p1), 1000, a1, { units: 'meters' }).geometry.coordinates,
+                    turf.destination(turf.point(p1), 1000, a1 + 180, { units: 'meters' }).geometry.coordinates
+                ]);
+                const line2 = turf.lineString([
+                    turf.destination(turf.point(p2), 1000, a2, { units: 'meters' }).geometry.coordinates,
+                    turf.destination(turf.point(p2), 1000, a2 + 180, { units: 'meters' }).geometry.coordinates
+                ]);
+                const intersect = turf.lineIntersect(line1, line2);
 
-        const line3 = turf.lineString([
-            turf.destination(turf.point(p1), 1000, orientation, {units:'meters'}).geometry.coordinates,
-            turf.destination(turf.point(p1), 1000, orientation + 180, {units:'meters'}).geometry.coordinates
-        ]);
-        const line4 = turf.lineString([
-            turf.destination(turf.point(p2), 1000, angle90, {units:'meters'}).geometry.coordinates,
-            turf.destination(turf.point(p2), 1000, angle90 + 180, {units:'meters'}).geometry.coordinates
-        ]);
-        const intersect2 = turf.lineIntersect(line3, line4);
-
-        if (intersect2.features.length > 0) {
-            const corner = intersect2.features[0].geometry.coordinates;
-            if (this.isPathInside(p1, corner, polygon) && this.isPathInside(corner, p2, polygon)) {
-                return [corner, p2];
+                if (intersect.features.length > 0) {
+                    const corner = intersect.features[0].geometry.coordinates;
+                    if (this.isPathInside(p1, corner, polygon) && this.isPathInside(corner, p2, polygon)) {
+                        return [corner, p2];
+                    }
+                }
             }
         }
 
@@ -659,6 +676,9 @@ class App {
 
     getBorderPath(p1, p2, polygon, orientation = null, originalPoly = null) {
         try {
+            const dist = turf.distance(p1, p2, { units: 'meters' });
+            if (dist < 0.1) return [p2];
+
             // Check if direct path is inside the safety buffer
             if (this.isPathInside(p1, p2, polygon)) return [p2];
 
@@ -671,6 +691,11 @@ class App {
                     const squareField = this.getSquareConnection(p1, p2, originalPoly, orientation);
                     if (squareField) return squareField;
                 }
+            }
+
+            // Fallback: Check if direct path is at least inside the original field boundary
+            if (originalPoly && this.isPathInside(p1, p2, originalPoly)) {
+                return [p2];
             }
 
             const simpleCorner = this.getSimpleCornerConnection(p1, p2, polygon, originalPoly);
