@@ -141,6 +141,11 @@
                             <label for="fp-curved">Kurvenreicher Flugpfad</label>
                         </div>
 
+                        <div class="form-group checkbox-group">
+                            <input type="checkbox" id="fp-clip-corners">
+                            <label for="fp-clip-corners">Ecken beschneiden (Clip spikes)</label>
+                        </div>
+
                         <div class="form-group slider-group">
                             <label for="fp-speed">Tempo (m/s): <span id="val-fp-speed">10</span></label>
                             <input type="range" id="slider-fp-speed" min="1" max="25" step="1" value="10">
@@ -164,6 +169,24 @@
                             <button type="button" id="btn-export-fp-kml" class="btn secondary small hidden">KML Export</button>
                         </div>
                     </form>
+
+                    <div id="waypoint-table-container" class="hidden" style="margin-top: 20px;">
+                        <h4>Wegpunkte</h4>
+                        <div style="max-height: 200px; overflow-y: auto;">
+                            <table id="waypoint-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Lat</th>
+                                        <th>Lng</th>
+                                        <th>Aktion</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
