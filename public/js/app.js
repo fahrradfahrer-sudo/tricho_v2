@@ -18,6 +18,9 @@ class App {
         this.btnReverseFP = document.getElementById('btn-reverse-fp');
         this.btnExportFPKML = document.getElementById('btn-export-fp-kml');
 
+        this.waypointTableBody = document.querySelector('#waypoint-table tbody');
+        this.waypointTableContainer = document.getElementById('waypoint-table-container');
+
         this.fields = []; // Local storage for fields data
         this.currentFlightPath = null;
 
@@ -55,6 +58,7 @@ class App {
                 const speed = parseFloat(document.getElementById('fp-speed').value) || 10;
                 this.updateFPStats(speed);
                 this.updateWaypointMarkers();
+                this.updateWaypointTable();
                 return;
             }
 
@@ -92,6 +96,10 @@ class App {
 
         this.closeFPSidebar.addEventListener('click', () => {
             this.fpSidebar.classList.add('hidden');
+            this.waypointTableContainer.classList.add('hidden');
+            if (this.currentFlightPath && this.currentFlightPath.editing) {
+                this.currentFlightPath.editing.disable();
+            }
             setTimeout(() => this.mapManager.map.invalidateSize(), 300);
         });
 
@@ -198,7 +206,7 @@ class App {
                 if (source !== 'slider') slider.value = val;
                 if (source !== 'input') input.value = val;
 
-                if (isOrientation && val == 0) {
+                if (isOrientation && (val == 0 || val === "" || val === "0")) {
                     valSpan.textContent = "Auto";
                     input.value = ""; // Empty for auto
                 } else {
@@ -219,6 +227,10 @@ class App {
         syncInput('slider-fp-height', 'fp-height', 'val-fp-height');
 
         document.getElementById('fp-curved').addEventListener('change', () => {
+            this.generateFlightPlan();
+        });
+
+        document.getElementById('fp-clip-corners').addEventListener('change', () => {
             this.generateFlightPlan();
         });
     }
@@ -246,13 +258,18 @@ class App {
                 <h4>${field.name}</h4>
                 <p>Fläche: ${field.area.toFixed(2)} Ha</p>
                 <div class="actions">
-                    <button onclick="app.zoomToField('${field.id}')" class="btn secondary">Zoom</button>
-                    <button onclick="app.openFlightPlanSidebar('${field.id}')" class="btn secondary">Flugplan</button>
-                    <button onclick="app.exportFieldKML('${field.id}')" class="btn secondary">KML</button>
-                    <button onclick="app.editFieldName('${field.id}')" class="btn secondary">Umbenennen</button>
-                    <button onclick="app.deleteField('${field.id}')" class="btn">Löschen</button>
+                    <button class="btn secondary action-zoom">Zoom</button>
+                    <button class="btn secondary action-fp">Flugplan</button>
+                    <button class="btn secondary action-kml">KML</button>
+                    <button class="btn secondary action-rename">Umbenennen</button>
+                    <button class="btn action-delete">Löschen</button>
                 </div>
             `;
+            div.querySelector('.action-zoom').addEventListener('click', () => this.zoomToField(field.id));
+            div.querySelector('.action-fp').addEventListener('click', () => this.openFlightPlanSidebar(field.id));
+            div.querySelector('.action-kml').addEventListener('click', () => this.exportFieldKML(field.id));
+            div.querySelector('.action-rename').addEventListener('click', () => this.editFieldName(field.id));
+            div.querySelector('.action-delete').addEventListener('click', () => this.deleteField(field.id));
             this.fieldList.appendChild(div);
         });
     }
@@ -291,9 +308,151 @@ class App {
             const speed = parseFloat(document.getElementById('fp-speed').value) || 10;
             this.updateFPStats(speed);
             this.updateWaypointMarkers();
+            this.updateWaypointTable();
+            if (this.currentFlightPath.editing) this.currentFlightPath.editing.enable();
         } else {
             this.generateFlightPlan();
         }
+    }
+
+    getMiteredOffset(poly, distance, clip) {
+        if (distance <= 0) return poly;
+
+        // Use turf.rewind to ensure consistent winding order:
+        // Outer ring: Counter-Clockwise (CCW)
+        // Holes: Clockwise (CW)
+        const rewound = turf.rewind(poly);
+        const geom = rewound.geometry || rewound;
+
+        const processRing = (ring) => {
+            const newRing = [];
+            const len = ring.length;
+            if (len < 4) return null;
+
+            for (let i = 0; i < len - 1; i++) {
+                const pPrev = i === 0 ? ring[len - 2] : ring[i - 1];
+                const pCurr = ring[i];
+                const pNext = ring[i + 1];
+
+                const b1 = turf.bearing(pPrev, pCurr);
+                const b2 = turf.bearing(pCurr, pNext);
+
+                // Normal direction (90 degrees to the left of the segment)
+                // For CCW outer ring, this points INWARD.
+                // For CW inner ring (hole), this points OUTWARD (into the field).
+                let n1 = b1 - 90;
+                let n2 = b2 - 90;
+
+                let diff = n2 - n1;
+                while (diff > 180) diff -= 360;
+                while (diff < -180) diff += 360;
+
+                const bisector = n1 + diff / 2;
+                const phi = (diff / 2) * Math.PI / 180;
+                const cosPhi = Math.cos(phi);
+
+                let miterDist = distance;
+                const miterLimit = 2.5;
+
+                if (Math.abs(cosPhi) > 0.01) {
+                    miterDist = distance / cosPhi;
+                }
+
+                if (clip && Math.abs(miterDist) > Math.abs(distance) * miterLimit) {
+                    const cp1 = turf.destination(turf.point(pCurr), distance, n1, {units:'meters'});
+                    const cp2 = turf.destination(turf.point(pCurr), distance, n2, {units:'meters'});
+                    newRing.push(cp1.geometry.coordinates);
+                    newRing.push(cp2.geometry.coordinates);
+                } else {
+                    const newPt = turf.destination(turf.point(pCurr), miterDist, bisector, {units: 'meters'}).geometry.coordinates;
+                    newRing.push(newPt);
+                }
+            }
+            if (newRing.length < 3) return null;
+            newRing.push(newRing[0]);
+            return newRing;
+        };
+
+        const resultPolygons = [];
+        const polySet = (geom.type === 'Polygon') ? [geom.coordinates] : geom.coordinates;
+
+        polySet.forEach(rings => {
+            const newRings = rings.map(ring => processRing(ring)).filter(r => r !== null);
+            if (newRings.length > 0) {
+                try {
+                    let p = turf.polygon(newRings);
+                    // Clean up potential self-intersections
+                    p = turf.buffer(p, 0);
+                    if (p) {
+                        if (p.type === 'FeatureCollection') {
+                            p.features.forEach(f => resultPolygons.push(f));
+                        } else {
+                            resultPolygons.push(p);
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Could not create offset polygon", e);
+                }
+            }
+        });
+
+        if (resultPolygons.length === 0) return null;
+        if (resultPolygons.length === 1) return resultPolygons[0];
+        return turf.featureCollection(resultPolygons);
+    }
+    simplifyGeo(geojson, toleranceMeters) {
+        const merc = turf.toMercator(geojson);
+        const simplified = turf.simplify(merc, { tolerance: toleranceMeters, highQuality: true });
+        return turf.toWgs84(simplified);
+    }
+
+    updateWaypointTable() {
+        if (!this.currentFlightPath) {
+            this.waypointTableContainer.classList.add('hidden');
+            return;
+        }
+        this.waypointTableContainer.classList.remove('hidden');
+        this.waypointTableBody.innerHTML = '';
+        const latlngs = this.currentFlightPath.getLatLngs();
+
+        latlngs.forEach((ll, idx) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${idx + 1}</td>
+                <td><input type="number" step="0.000001" value="${ll.lat.toFixed(6)}" data-idx="${idx}" data-type="lat"></td>
+                <td><input type="number" step="0.000001" value="${ll.lng.toFixed(6)}" data-idx="${idx}" data-type="lng"></td>
+                <td><button type="button" class="btn secondary small action-delete-wp">Löschen</button></td>
+            `;
+            tr.querySelector('.action-delete-wp').addEventListener('click', () => this.removeWaypoint(idx));
+            this.waypointTableBody.appendChild(tr);
+        });
+
+        this.waypointTableBody.querySelectorAll('input').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const idx = parseInt(e.target.dataset.idx);
+                const type = e.target.dataset.type;
+                const val = parseFloat(e.target.value);
+                const currentLatLngs = this.currentFlightPath.getLatLngs();
+                if (type === 'lat') currentLatLngs[idx].lat = val;
+                else currentLatLngs[idx].lng = val;
+                this.currentFlightPath.setLatLngs(currentLatLngs);
+                this.updateWaypointMarkers();
+                this.updateFPStats(parseFloat(document.getElementById('fp-speed').value) || 10);
+            });
+        });
+    }
+
+    removeWaypoint(idx) {
+        const latlngs = this.currentFlightPath.getLatLngs();
+        if (latlngs.length <= 2) {
+            alert("Ein Flugplan muss mindestens 2 Punkte haben.");
+            return;
+        }
+        latlngs.splice(idx, 1);
+        this.currentFlightPath.setLatLngs(latlngs);
+        this.updateWaypointMarkers();
+        this.updateWaypointTable();
+        this.updateFPStats(parseFloat(document.getElementById('fp-speed').value) || 10);
     }
 
     generateFlightPlan() {
@@ -301,203 +460,186 @@ class App {
         const field = this.fields.find(f => String(f.id) === String(id));
         if (!field) return;
 
-        this.zoomToField(id);
-
         const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
         const borderDistance = parseFloat(document.getElementById('fp-border-distance').value) || 5;
         let orientation = document.getElementById('fp-orientation').value;
         const speed = parseFloat(document.getElementById('fp-speed').value) || 10;
         const isCurved = document.getElementById('fp-curved').checked;
+        const clipCorners = document.getElementById('fp-clip-corners').checked;
 
         const geoJson = JSON.parse(field.geometry);
-        let turfPoly = turf.rewind(turf.polygon(geoJson.coordinates));
+        let originalPoly = turf.rewind(turf.polygon(geoJson.coordinates));
 
-        // 1. Buffer inward
-        let buffered = turf.buffer(turfPoly, -borderDistance, { units: 'meters' });
-        if (!buffered || (buffered.type === 'Feature' && (!buffered.geometry || buffered.geometry.coordinates.length === 0)) || (buffered.type === 'FeatureCollection' && buffered.features.length === 0)) {
-            alert('Abstand zum Rand ist zu groß für diesen Schlag.');
+        // 1. Virtual Border (Mitered Inward Offset)
+        let virtualBorder = this.getMiteredOffset(originalPoly, borderDistance, clipCorners);
+
+        if (!virtualBorder) {
+            alert('Abstand zum Rand ist zu groß für diesen Schlag oder der Schlag ist zu klein.');
             return;
         }
 
+        // Ensure virtual border is within original poly
+        try {
+            if (virtualBorder.type === 'FeatureCollection') {
+                const combined = virtualBorder.features.reduce((acc, f) => acc ? turf.union(acc, f) : f, null);
+                virtualBorder = turf.intersect(combined, originalPoly);
+            } else {
+                virtualBorder = turf.intersect(virtualBorder, originalPoly);
+            }
+        } catch(e) {
+            console.warn("Intersection failed", e);
+        }
+
+        if (!virtualBorder || (virtualBorder.type === 'FeatureCollection' && virtualBorder.features.length === 0)) {
+            alert('Abstand zum Rand ist zu groß für diesen Schlag oder der Schlag ist zu klein.');
+            return;
+        }
+
+        // Soften boundary slightly
+        virtualBorder = this.simplifyGeo(virtualBorder, 0.1);
         let pathPoints = [];
 
         if (isCurved) {
-            // Curved / Offset-based generation
+            // Keep existing curved logic but use the new virtual border
             let currentBufferDist = 0;
             let direction = 1;
             let lastPoint = null;
+            let bufferBase = virtualBorder;
 
             while (true) {
-                let currentBuffered = turf.buffer(buffered, -currentBufferDist, { units: 'meters' });
+                let currentBuffered = turf.buffer(bufferBase, -currentBufferDist, { units: 'meters' });
                 if (!currentBuffered || (currentBuffered.type === 'Feature' && (!currentBuffered.geometry || currentBuffered.geometry.coordinates.length === 0)) || (currentBuffered.type === 'FeatureCollection' && currentBuffered.features.length === 0)) {
                     break;
                 }
 
-                // Get coordinates of all polygons in this buffer level
                 const features = currentBuffered.type === 'FeatureCollection' ? currentBuffered.features : [currentBuffered];
                 features.forEach(feature => {
-                    if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
-                        const coords = feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
-                        coords.forEach(polyCoords => {
-                            let ring = polyCoords[0]; // Outer ring
-                            if (direction === -1) ring = [...ring].reverse();
+                    const coords = feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+                    coords.forEach(polyCoords => {
+                        let ring = polyCoords[0];
+                        if (direction === -1) ring = [...ring].reverse();
 
-                            // Find point closest to last added point to minimize jumps
-                            if (lastPoint) {
-                                let closestIdx = 0;
-                                let minDist = Infinity;
-                                ring.forEach((p, idx) => {
-                                    const d = turf.distance(lastPoint, p, { units: 'meters' });
-                                    if (d < minDist) {
-                                        minDist = d;
-                                        closestIdx = idx;
-                                    }
-                                });
-                                ring = ring.slice(closestIdx).concat(ring.slice(0, closestIdx));
-
-                                // Connection to the new ring/polygon
-                                const p1 = ring[0];
-                                if (!this.isPathInside(lastPoint, p1, buffered)) {
-                                    let borderPath = this.getBorderPath(lastPoint, p1, buffered, null, turfPoly); // Pass original poly for validation
-                                    borderPath.forEach(p => {
-                                        if (turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
-                                            pathPoints.push(p);
-                                        }
-                                    });
+                        if (lastPoint) {
+                            let closestIdx = 0;
+                            let minDist = Infinity;
+                            ring.forEach((p, idx) => {
+                                const d = turf.distance(lastPoint, p, { units: 'meters' });
+                                if (d < minDist) {
+                                    minDist = d;
+                                    closestIdx = idx;
                                 }
-                            }
+                            });
+                            ring = ring.slice(closestIdx).concat(ring.slice(0, closestIdx));
 
-                            ring.forEach(p => {
+                            // Transition to new ring
+                            const p1 = ring[0];
+                            let borderPath = this.getBorderPath(lastPoint, p1, virtualBorder);
+                            borderPath.forEach(p => {
                                 if (pathPoints.length === 0 || turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                                     pathPoints.push(p);
                                 }
                             });
-                            lastPoint = pathPoints[pathPoints.length - 1];
+                        }
+
+                        ring.forEach(p => {
+                            if (pathPoints.length === 0 || turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
+                                pathPoints.push(p);
+                            }
                         });
-                    }
+                        lastPoint = pathPoints[pathPoints.length - 1];
+                    });
                 });
 
                 currentBufferDist += pathDistance;
-                direction *= -1; // Reverse direction for zigzag effect
-                if (currentBufferDist > 5000) break; // Safety break
+                direction *= -1;
+                if (currentBufferDist > 10000) break;
             }
         } else {
-            // Standard Zigzag Generation
-            // 2. Orientation
-            if (orientation === "") {
-                orientation = this.calculateOptimalOrientation(buffered);
+            // New Zigzag Logic
+            if (orientation === "" || orientation === null || orientation === "0") {
+                orientation = this.calculateOptimalOrientation(virtualBorder);
             } else {
                 orientation = parseFloat(orientation);
             }
 
-            // 3. Generate grid
-            const bbox = turf.bbox(buffered);
-            const diag = turf.distance(turf.point([bbox[0], bbox[1]]), turf.point([bbox[2], bbox[3]]), { units: 'meters' });
-            const center = turf.center(buffered);
+            const center = turf.center(virtualBorder);
+            const rotatedVB = turf.transformRotate(virtualBorder, -orientation, { pivot: center });
+            const bbox = turf.bbox(rotatedVB);
 
-            // Create a grid of lines larger than the bbox to account for rotation
-            const gridLines = [];
-            const numLines = Math.ceil(diag * 1.5 / pathDistance) + 4;
-            const startOffset = -(numLines * pathDistance) / 2;
+            // Use a more precise lat spacing calculation
+            const pStart = [bbox[0], bbox[1]];
+            const pNext = turf.destination(turf.point(pStart), pathDistance, 0, {units:'meters'}).geometry.coordinates;
+            const latSpacing = Math.abs(pNext[1] - pStart[1]);
 
-            for (let i = 0; i <= numLines; i++) {
-                const offset = startOffset + i * pathDistance;
-                // Line parallel to orientation
-                const line = turf.lineString([
-                    turf.destination(center, diag, orientation, { units: 'meters' }).geometry.coordinates,
-                    turf.destination(center, diag, orientation + 180, { units: 'meters' }).geometry.coordinates
-                ]);
-                // Translate line perpendicular to orientation
-                const translatedLine = turf.transformTranslate(line, offset, orientation + 90, { units: 'meters' });
-                gridLines.push(translatedLine);
-            }
+            let currentY = bbox[1] + latSpacing / 2;
+            let rows = [];
 
-            // 4. Intersect grid lines with buffered polygon and find segments
-            let lineSegments = [];
-            const bufferedFeatures = buffered.type === 'FeatureCollection' ? buffered.features : [buffered];
+            while (currentY < bbox[3]) {
+                const line = turf.lineString([[bbox[0] - 0.01, currentY], [bbox[2] + 0.01, currentY]]);
+                const intersects = turf.lineIntersect(line, rotatedVB);
 
-            gridLines.forEach((line) => {
-                const intersect = turf.lineIntersect(line, buffered);
-                if (intersect.features.length >= 2) {
-                    let coords = intersect.features.map(f => f.geometry.coordinates);
-                    const refPoint = line.geometry.coordinates[0];
-                    coords.sort((a, b) => turf.distance(refPoint, a) - turf.distance(refPoint, b));
+                if (intersects.features.length >= 2) {
+                    let pts = intersects.features.map(f => f.geometry.coordinates);
+                    pts.sort((a, b) => a[0] - b[0]);
 
-                    let segmentsOnLine = [];
-                    for (let j = 0; j < coords.length - 1; j++) {
-                        let p1 = coords[j];
-                        let p2 = coords[j + 1];
-                        let midpoint = turf.midpoint(p1, p2);
-
-                        let isInside = false;
-                        for (const f of bufferedFeatures) {
-                            if (turf.booleanPointInPolygon(midpoint, f)) {
-                                isInside = true;
-                                break;
-                            }
-                        }
-
-                        if (isInside) {
-                            segmentsOnLine.push([p1, p2]);
+                    let rowSegments = [];
+                    for (let j = 0; j < pts.length - 1; j++) {
+                        let p1 = pts[j];
+                        let p2 = pts[j + 1];
+                        let mid = turf.midpoint(p1, p2);
+                        if (turf.booleanPointInPolygon(mid, rotatedVB)) {
+                            rowSegments.push([p1, p2]);
                         }
                     }
-                    if (segmentsOnLine.length > 0) {
-                        lineSegments.push(segmentsOnLine);
+                    if (rowSegments.length > 0) {
+                        rows.push(rowSegments);
                     }
                 }
-            });
+                currentY += latSpacing;
+            }
 
-            if (lineSegments.length === 0) {
-                alert('Konnte keinen Flugplan generieren. Prüfen Sie die Parameter.');
+            if (rows.length === 0) {
+                alert('Konnte keinen Flugplan generieren. Prüfen Sie die Parameter (Abstand zum Rand evtl. zu groß).');
                 return;
             }
 
-            // 5. Connect segments in zigzag
-            lineSegments.forEach((segments, i) => {
+            let rotatedPath = [];
+            rows.forEach((row, i) => {
                 const isForward = (i % 2 === 0);
-                const orderedSegments = isForward ? segments : [...segments].reverse();
+                const segments = isForward ? row : [...row].reverse();
 
-                orderedSegments.forEach((seg) => {
+                segments.forEach(seg => {
                     const p1 = isForward ? seg[0] : seg[1];
                     const p2 = isForward ? seg[1] : seg[0];
 
-                    if (pathPoints.length > 0) {
-                        const prev = pathPoints[pathPoints.length - 1];
-                        // If p1 is same as prev, skip connection check
-                        if (turf.distance(prev, p1, { units: 'meters' }) > 0.1) {
-                            if (!this.isPathInside(prev, p1, buffered)) {
-                                let borderPath = this.getBorderPath(prev, p1, buffered, orientation, turfPoly); // Pass original poly for validation
-                                borderPath.forEach(p => {
-                                    if (turf.distance(pathPoints[pathPoints.length - 1], p, { units: 'meters' }) > 0.1) {
-                                        pathPoints.push(p);
-                                    }
-                                });
+                    if (rotatedPath.length > 0) {
+                        const prev = rotatedPath[rotatedPath.length - 1];
+                        let connection = this.getBorderPath(prev, p1, rotatedVB);
+                        connection.forEach(p => {
+                            if (turf.distance(rotatedPath[rotatedPath.length - 1], p, { units: 'meters' }) > 0.1) {
+                                rotatedPath.push(p);
                             }
-                        }
+                        });
                     }
 
-                    if (pathPoints.length === 0 || turf.distance(pathPoints[pathPoints.length - 1], p1, { units: 'meters' }) > 0.1) {
-                        pathPoints.push(p1);
+                    if (rotatedPath.length === 0 || turf.distance(rotatedPath[rotatedPath.length - 1], p1, { units: 'meters' }) > 0.1) {
+                        rotatedPath.push(p1);
                     }
-                    if (turf.distance(pathPoints[pathPoints.length - 1], p2, { units: 'meters' }) > 0.1) {
-                        pathPoints.push(p2);
+                    if (turf.distance(rotatedPath[rotatedPath.length - 1], p2, { units: 'meters' }) > 0.1) {
+                        rotatedPath.push(p2);
                     }
                 });
             });
+
+            const pathLine = turf.lineString(rotatedPath);
+            const unrotatedPath = turf.transformRotate(pathLine, orientation, { pivot: center });
+            pathPoints = unrotatedPath.geometry.coordinates;
         }
 
-        if (pathPoints.length < 2) {
-            alert('Konnte keinen Flugplan generieren. Prüfen Sie die Parameter.');
-            return;
-        }
-
-        // 6. Simplify path to respect minimum distance between points
-        // User requested "at best the same value like distance between flightpath (lane spacing)"
-        // "at least 0.5m"
         const minPointDist = parseFloat(document.getElementById('fp-min-dist').value) || 5;
-        pathPoints = this.simplifyPath(pathPoints, minPointDist, buffered);
+        pathPoints = this.simplifyPath(pathPoints, minPointDist, virtualBorder);
 
-        // 7. Display path
+        // Display
         if (this.currentFlightPath) {
             this.mapManager.drawnItems.removeLayer(this.currentFlightPath);
         }
@@ -506,11 +648,11 @@ class App {
         const latlngs = pathPoints.map(p => [p[1], p[0]]);
         this.currentFlightPath = L.polyline(latlngs, { color: 'red', weight: 3 });
 
-        // Add waypoint markers
         this.updateWaypointMarkers();
+        this.updateWaypointTable();
 
-        // For Leaflet.draw editing, the layer must be in the featureGroup
         this.mapManager.drawnItems.addLayer(this.currentFlightPath);
+        if (this.currentFlightPath.editing) this.currentFlightPath.editing.enable();
 
         this.updateFPStats(speed);
 
@@ -525,6 +667,7 @@ class App {
         latlngs.reverse();
         this.currentFlightPath.setLatLngs(latlngs);
         this.updateWaypointMarkers();
+        this.updateWaypointTable();
     }
 
     updateWaypointMarkers() {
@@ -533,11 +676,9 @@ class App {
         const latlngs = this.currentFlightPath.getLatLngs();
         const total = latlngs.length;
 
-        // Skip markers if too many to avoid visual clutter, but always keep start/end
         let step = 1;
         if (total > 100) step = 2;
         if (total > 300) step = 5;
-        if (total > 1000) step = 10;
 
         latlngs.forEach((ll, idx) => {
             const isLast = idx === total - 1;
@@ -556,6 +697,15 @@ class App {
         });
     }
 
+    isCollinear(p1, p2, p3, threshold = 2.5) {
+        const b1 = turf.bearing(p1, p2);
+        const b2 = turf.bearing(p2, p3);
+        let diff = b1 - b2;
+        while (diff > 180) diff -= 360;
+        while (diff < -180) diff += 360;
+        return Math.abs(diff) < threshold;
+    }
+
     isPathInside(p1, p2, polygon, tolerance = 0.05) {
         const line = turf.lineString([p1, p2]);
         const len = turf.length(line, { units: 'meters' });
@@ -563,7 +713,6 @@ class App {
 
         const features = polygon.type === 'FeatureCollection' ? polygon.features : [polygon];
 
-        // 1. Check for intersections with the boundaries of all polygons
         for (const feature of features) {
             const boundary = turf.polygonToLine(feature);
             const intersects = turf.lineIntersect(line, boundary);
@@ -571,181 +720,42 @@ class App {
             const significantIntersects = intersects.features.filter(f => {
                 const d1 = turf.distance(f, p1, { units: 'meters' });
                 const d2 = turf.distance(f, p2, { units: 'meters' });
-                return d1 > tolerance && d2 > tolerance;
+                return d1 > 0.1 && d2 > 0.1;
             });
 
-            if (significantIntersects.length > 0) {
-                return false;
-            }
+            if (significantIntersects.length > 0) return false;
         }
 
-        // 2. Sample points to check if the entire segment is inside
-        const numSamples = Math.max(5, Math.min(100, Math.ceil(len / 0.5)));
+        const numSamples = Math.max(10, Math.min(100, Math.ceil(len / 0.5)));
         for (let i = 0; i <= numSamples; i++) {
             const dist = (i / numSamples) * len;
             const p = turf.along(line, dist, { units: 'meters' });
 
             let isInside = false;
-            let minDistToAnyBoundary = Infinity;
-
             for (const feature of features) {
                 if (turf.booleanPointInPolygon(p, feature)) {
                     isInside = true;
                     break;
                 }
-                const boundary = turf.polygonToLine(feature);
-                const ptOnLine = turf.nearestPointOnLine(boundary, p, { units: 'meters' });
-                if (ptOnLine.properties.dist < minDistToAnyBoundary) {
-                    minDistToAnyBoundary = ptOnLine.properties.dist;
-                }
             }
-
-            if (!isInside && minDistToAnyBoundary > tolerance) {
-                return false;
+            if (!isInside) {
+                let minBorderDist = Infinity;
+                for (const feature of features) {
+                    const boundary = turf.polygonToLine(feature);
+                    const nearest = turf.nearestPointOnLine(boundary, p, { units: 'meters' });
+                    const distToBorder = turf.distance(p, nearest, { units: 'meters' });
+                    if (distToBorder < minBorderDist) minBorderDist = distToBorder;
+                }
+                if (minBorderDist > tolerance) return false;
             }
         }
         return true;
     }
 
-    getSquareConnection(p1, p2, polygon, orientation) {
-        const angles = [orientation, (orientation + 90) % 360, (orientation + 180) % 360, (orientation + 270) % 360];
-
-        for (const a1 of angles) {
-            for (const a2 of angles) {
-                if (Math.abs(a1 - a2) % 180 === 0) continue;
-
-                const line1 = turf.lineString([
-                    turf.destination(turf.point(p1), 1000, a1, { units: 'meters' }).geometry.coordinates,
-                    turf.destination(turf.point(p1), 1000, a1 + 180, { units: 'meters' }).geometry.coordinates
-                ]);
-                const line2 = turf.lineString([
-                    turf.destination(turf.point(p2), 1000, a2, { units: 'meters' }).geometry.coordinates,
-                    turf.destination(turf.point(p2), 1000, a2 + 180, { units: 'meters' }).geometry.coordinates
-                ]);
-                const intersect = turf.lineIntersect(line1, line2);
-
-                if (intersect.features.length > 0) {
-                    const corner = intersect.features[0].geometry.coordinates;
-                    if (this.isPathInside(p1, corner, polygon) && this.isPathInside(corner, p2, polygon)) {
-                        return [corner, p2];
-                    }
-                }
-            }
-        }
-
-        return null;
+    getBorderPath(p1, p2, polygon) {
+        if (this.isPathInside(p1, p2, polygon, 0.05)) return [p2];
+        return this.getBorderPathOnBoundary(p1, p2, polygon);
     }
-
-    getSimpleCornerConnection(p1, p2, polygon, originalPoly) {
-        // Option B: Find a single intermediate point (corner) that is safe
-        // First try to find a corner within the safety buffer (polygon)
-        let corner = this._findBestCorner(p1, p2, polygon, polygon);
-        if (corner) return [corner, p2];
-
-        // If no safe corner within the buffer, try finding one that is at least within the field (originalPoly)
-        if (originalPoly) {
-            corner = this._findBestCorner(p1, p2, polygon, originalPoly);
-            if (corner) return [corner, p2];
-        }
-
-        return null;
-    }
-
-    _findBestCorner(p1, p2, boundaryPoly, safetyPoly) {
-        const pathOnBoundary = this.getBorderPathOnBoundary(p1, p2, boundaryPoly);
-        if (pathOnBoundary.length <= 2) return null;
-
-        let bestCorner = null;
-        let maxDist = -1;
-        const directLine = turf.lineString([p1, p2]);
-
-        for (let i = 1; i < pathOnBoundary.length - 1; i++) {
-            const pt = pathOnBoundary[i];
-            const dist = turf.pointToLineDistance(pt, directLine, {units:'meters'});
-            if (dist > maxDist) {
-                // For the corner to be "better", we just need it to be safe.
-                // We check if p1->pt and pt->p2 are within safetyPoly.
-                if (this.isPathInside(p1, pt, safetyPoly) && this.isPathInside(pt, p2, safetyPoly)) {
-                    maxDist = dist;
-                    bestCorner = pt;
-                }
-            }
-        }
-        return bestCorner;
-    }
-
-    getBorderPath(p1, p2, polygon, orientation = null, originalPoly = null) {
-        try {
-            const dist = turf.distance(p1, p2, { units: 'meters' });
-            if (dist < 0.1) return [p2];
-
-            // Check if direct path is inside the safety buffer
-            if (this.isPathInside(p1, p2, polygon)) return [p2];
-
-            if (orientation !== null) {
-                const square = this.getSquareConnection(p1, p2, polygon, orientation);
-                if (square) return square;
-
-                // Try square connection within original boundary if it clips safety buffer
-                if (originalPoly) {
-                    const squareField = this.getSquareConnection(p1, p2, originalPoly, orientation);
-                    if (squareField) return squareField;
-                }
-            }
-
-            // Fallback: Check if direct path is at least inside the original field boundary
-            if (originalPoly && this.isPathInside(p1, p2, originalPoly)) {
-                return [p2];
-            }
-
-            const simpleCorner = this.getSimpleCornerConnection(p1, p2, polygon, originalPoly);
-            if (simpleCorner) return simpleCorner;
-
-            const line = turf.lineString([p1, p2]);
-            const boundary = turf.flatten(turf.polygonToLine(polygon));
-            const intersect = turf.lineIntersect(line, boundary);
-
-            // Get all intersection points on the line
-            let pts = intersect.features.map(f => f.geometry.coordinates);
-            pts.push(p1);
-            pts.push(p2);
-
-            // Sort them along the line from p1 to p2
-            pts.sort((a, b) => turf.distance(p1, a) - turf.distance(p1, b));
-
-            // Unique points
-            let uniquePts = [];
-            pts.forEach(p => {
-                if (uniquePts.length === 0 || turf.distance(uniquePts[uniquePts.length - 1], p, { units: 'meters' }) > 0.05) {
-                    uniquePts.push(p);
-                }
-            });
-
-            let resultPath = [];
-            for (let i = 0; i < uniquePts.length - 1; i++) {
-                const curr = uniquePts[i];
-                const next = uniquePts[i + 1];
-
-                if (this.isPathInside(curr, next, polygon)) {
-                    if (resultPath.length === 0 || turf.distance(resultPath[resultPath.length - 1], next, { units: 'meters' }) > 0.05) {
-                        resultPath.push(next);
-                    }
-                } else {
-                    const bPath = this.getBorderPathOnBoundary(curr, next, polygon);
-                    bPath.forEach(p => {
-                        if (resultPath.length === 0 || turf.distance(resultPath[resultPath.length - 1], p, { units: 'meters' }) > 0.05) {
-                            resultPath.push(p);
-                        }
-                    });
-                }
-            }
-            return resultPath;
-        } catch (e) {
-            console.error("Error in getBorderPath", e);
-            return [p2];
-        }
-    }
-
     getBorderPathOnBoundary(p1, p2, polygon) {
         const boundary = turf.flatten(turf.polygonToLine(polygon));
         let bestPath = [p2];
@@ -754,13 +764,8 @@ class App {
         for (const feature of boundary.features) {
             const line = feature.geometry;
             const coords = line.coordinates;
-            if (!coords || coords.length < 2) continue;
-
             const pt1 = turf.nearestPointOnLine(line, p1, { units: 'meters' });
             const pt2 = turf.nearestPointOnLine(line, p2, { units: 'meters' });
-
-            // Only consider this ring if both points are reasonably close to it
-            if (pt1.properties.dist > 1.0 || pt2.properties.dist > 1.0) continue;
 
             const idx1 = pt1.properties.index;
             const idx2 = pt2.properties.index;
@@ -771,21 +776,8 @@ class App {
             const dF = turf.length(turf.lineString(pathF));
             const dB = turf.length(turf.lineString(pathB));
 
-            // Pick shorter path
-            if (dF < minDist) {
-                minDist = dF;
-                bestPath = pathF;
-            }
-            if (dB < minDist) {
-                minDist = dB;
-                bestPath = pathB;
-            }
-        }
-
-        // Simplify boundary path to remove jitter
-        if (bestPath.length > 2) {
-            const simplified = turf.simplify(turf.lineString(bestPath), { tolerance: 0.1, highQuality: true });
-            return simplified.geometry.coordinates;
+            if (dF < minDist) { minDist = dF; bestPath = pathF; }
+            if (dB < minDist) { minDist = dB; bestPath = pathB; }
         }
 
         return bestPath;
@@ -796,12 +788,6 @@ class App {
         let i = direction === 1 ? (idx1 + 1) % coords.length : idx1;
         const targetIdx = direction === 1 ? (idx2 + 1) % coords.length : idx2;
         let safety = 0;
-
-        // Optimization: if direct move on boundary is small, just take end point
-        if (idx1 === idx2) {
-            path.push(endPt);
-            return path;
-        }
 
         while (i !== targetIdx && safety < coords.length * 2) {
             path.push(coords[i]);
@@ -815,16 +801,13 @@ class App {
     simplifyPath(points, minDistance, polygon) {
         if (points.length < 2) return points;
 
-        // Pass 1: Greedy "Visibility" simplification
         let simplified = [points[0]];
         let current = 0;
 
         while (current < points.length - 1) {
             let furthestTarget = current + 1;
             for (let target = current + 2; target < points.length; target++) {
-                // Use a slightly larger tolerance (0.1m) for visibility checks during simplification
-                // This allows bypassing minor boundary fluctuations that are well within the field.
-                if (this.isPathInside(simplified[simplified.length - 1], points[target], polygon, 0.1)) {
+                if (this.isPathInside(simplified[simplified.length - 1], points[target], polygon, 0.1) && this.isCollinear(simplified[simplified.length - 1], points[target - 1], points[target])) {
                     furthestTarget = target;
                 } else {
                     break;
@@ -834,38 +817,14 @@ class App {
             current = furthestTarget;
         }
 
-        // Pass 2: Collinear point removal
-        let result = [simplified[0]];
-        for (let i = 1; i < simplified.length - 1; i++) {
-            const pPrev = result[result.length - 1];
-            const pCurr = simplified[i];
-            const pNext = simplified[i + 1];
-
-            const b1 = turf.bearing(pPrev, pCurr);
-            const b2 = turf.bearing(pCurr, pNext);
-            let diff = Math.abs(b1 - b2);
-            if (diff > 180) diff = 360 - diff;
-
-            // Increase collinearity threshold to 2.5 degrees for more aggressive pruning
-            if (diff < 2.5) {
-                if (this.isPathInside(pPrev, pNext, polygon, 0.1)) {
-                    continue;
-                }
-            }
-            result.push(pCurr);
-        }
-        result.push(simplified[simplified.length - 1]);
-
-        // Pass 3: DJI-mandated minimum distance (0.5m)
-        let finalPath = [result[0]];
-        for (let i = 1; i < result.length; i++) {
+        let finalPath = [simplified[0]];
+        for (let i = 1; i < simplified.length; i++) {
             const prev = finalPath[finalPath.length - 1];
-            const curr = result[i];
-            const dist = turf.distance(prev, curr, { units: 'meters' });
-
-            if (dist >= 0.5) {
+            const curr = simplified[i];
+            const d = turf.distance(prev, curr, { units: "meters" });
+            if (d >= Math.max(0.5, minDistance)) {
                 finalPath.push(curr);
-            } else if (i === result.length - 1 && finalPath.length > 1) {
+            } else if (i === simplified.length - 1 && finalPath.length > 1) {
                 finalPath[finalPath.length - 1] = curr;
             }
         }
@@ -873,19 +832,18 @@ class App {
         return finalPath;
     }
 
+    // Skip old simplifyPath implementation
     calculateOptimalOrientation(polygon) {
-        // Simple heuristic: find the longest side of the convex hull
         const hull = turf.convex(polygon);
+        if (!hull) return 0;
         let maxDist = 0;
         let bestAngle = 0;
         const coords = hull.geometry.coordinates[0];
         for (let i = 0; i < coords.length - 1; i++) {
-            const p1 = coords[i];
-            const p2 = coords[i+1];
-            const dist = turf.distance(p1, p2);
-            if (dist > maxDist) {
-                maxDist = dist;
-                bestAngle = turf.bearing(p1, p2);
+            const d = turf.distance(coords[i], coords[i+1]);
+            if (d > maxDist) {
+                maxDist = d;
+                bestAngle = turf.bearing(coords[i], coords[i+1]);
             }
         }
         return bestAngle;
@@ -1060,7 +1018,6 @@ class App {
     async handleImport(files) {
         if (!files || files.length === 0) return;
 
-        // Check if multiple files are selected (unzipped SHP)
         const fileMap = {};
         for (let i = 0; i < files.length; i++) {
             const ext = files[i].name.split('.').pop().toLowerCase();
@@ -1068,18 +1025,13 @@ class App {
         }
 
         if (fileMap['shp']) {
-            // Unzipped SHP
             try {
                 const shpBuffer = await fileMap['shp'].arrayBuffer();
                 const dbfBuffer = fileMap['dbf'] ? await fileMap['dbf'].arrayBuffer() : null;
                 const shxBuffer = fileMap['shx'] ? await fileMap['shx'].arrayBuffer() : null;
-                const prjBuffer = fileMap['prj'] ? await fileMap['prj'].arrayBuffer() : null;
 
-                // shp.parseShp also takes shx as second argument
                 const shpObj = shp.parseShp(shpBuffer, shxBuffer);
                 const dbfObj = dbfBuffer ? shp.parseDbf(dbfBuffer) : null;
-
-                // shpjs handles prj if passed in certain ways, but for combine we mostly need geometry
                 const geoJson = await shp.combine([shpObj, dbfObj]);
 
                 this.addImportedGeoJson(geoJson);
@@ -1090,25 +1042,21 @@ class App {
             return;
         }
 
-        // Single file import
         const file = files[0];
         const reader = new FileReader();
         reader.onload = async (e) => {
             try {
                 const extension = file.name.split('.').pop().toLowerCase();
                 if (extension === 'zip') {
-                    // SHP file (zipped)
                     const geoJson = await shp(e.target.result);
                     this.addImportedGeoJson(geoJson);
                 } else if (extension === 'kml') {
-                    // KML file
                     const kmlLayer = omnivore.kml.parse(e.target.result);
                     this.addImportedGeoJson(kmlLayer.toGeoJSON());
                 } else if (extension === 'xml') {
-                    // Digital Field Record Book (ISO-XML)
                     this.parseISOXML(e.target.result);
                 } else {
-                    alert('Nicht unterstütztes Dateiformat. Bitte verwenden Sie .zip (für SHP), .kml, .xml (ISO-XML) oder wählen Sie alle SHP-Einzeldateien aus.');
+                    alert('Nicht unterstütztes Dateiformat.');
                 }
             } catch (err) {
                 console.error(err);
@@ -1116,41 +1064,31 @@ class App {
             }
         };
 
-        if (file.name.endsWith('.zip')) {
-            reader.readAsArrayBuffer(file);
-        } else {
-            reader.readAsText(file);
-        }
+        if (file.name.endsWith('.zip')) reader.readAsArrayBuffer(file);
+        else reader.readAsText(file);
     }
 
     parseISOXML(xmlString) {
         try {
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-            const partfields = xmlDoc.getElementsByTagName("PFD"); // Partfield
-
-            if (partfields.length === 0) {
-                alert('Keine Schläge in der XML-Datei gefunden.');
-                return;
-            }
+            const partfields = xmlDoc.getElementsByTagName("PFD");
 
             for (let i = 0; i < partfields.length; i++) {
                 const pfd = partfields[i];
                 const name = pfd.getAttribute("C") || `Schlag ${this.fields.length + 1}`;
-                const polygons = pfd.getElementsByTagName("PLN"); // Polygon
+                const polygons = pfd.getElementsByTagName("PLN");
 
                 for (let j = 0; j < polygons.length; j++) {
                     const pln = polygons[j];
-                    const points = pln.getElementsByTagName("PNT"); // Point
+                    const points = pln.getElementsByTagName("PNT");
                     const latlngs = [];
 
                     for (let k = 0; k < points.length; k++) {
                         const pnt = points[k];
-                        const lat = parseFloat(pnt.getAttribute("A")); // Latitude
-                        const lng = parseFloat(pnt.getAttribute("B")); // Longitude
-                        if (!isNaN(lat) && !isNaN(lng)) {
-                            latlngs.push([lat, lng]);
-                        }
+                        const lat = parseFloat(pnt.getAttribute("A"));
+                        const lng = parseFloat(pnt.getAttribute("B"));
+                        if (!isNaN(lat) && !isNaN(lng)) latlngs.push([lat, lng]);
                     }
 
                     if (latlngs.length > 2) {
@@ -1168,12 +1106,10 @@ class App {
             }
         } catch (err) {
             console.error(err);
-            alert('Fehler beim Parsen der ISO-XML Datei: ' + err.message);
         }
     }
 
     addImportedGeoJson(geoJson) {
-        // Handle FeatureCollection or single Feature
         const features = geoJson.features || (geoJson.type === 'Feature' ? [geoJson] : []);
         features.forEach(feature => {
             if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
@@ -1213,7 +1149,7 @@ class App {
             });
             const result = await response.json();
             if (result.success) {
-                alert('Antrag erfolgreich abgesendet! Kunden-ID: ' + result.customerId);
+                alert('Antrag erfolgreich abgesendet!');
                 location.reload();
             } else {
                 alert('Fehler: ' + result.message);
