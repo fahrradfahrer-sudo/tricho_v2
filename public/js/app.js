@@ -253,10 +253,13 @@ class App {
         const batchSize = 100;
 
         const tryFetch = async (dataset, batch) => {
-            const response = await fetch(`https://api.opentopodata.org/v1/${dataset}`, {
+            const response = await fetch(`../api/get_terrain.php`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ locations: batch })
+                body: JSON.stringify({
+                    dataset: dataset,
+                    locations: batch
+                })
             });
             const data = await response.json();
             if (data.status === 'OK') {
