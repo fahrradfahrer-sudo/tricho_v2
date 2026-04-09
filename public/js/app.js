@@ -24,6 +24,7 @@ class App {
 
         this.fields = []; // Local storage for fields data
         this.currentFlightPath = null;
+        this.fpUpdateTimeout = null;
 
         this.initMap();
         this.attachEventListeners();
@@ -213,7 +214,7 @@ class App {
                 } else {
                     valSpan.textContent = val;
                 }
-                this.generateFlightPlan();
+                this.scheduleFPUpdate();
             };
 
             slider.addEventListener('input', (e) => update(e.target.value, 'slider'));
@@ -236,8 +237,13 @@ class App {
         });
 
         this.terrainFollowingCheckbox.addEventListener('change', () => {
-            this.generateFlightPlan();
+            this.scheduleFPUpdate();
         });
+    }
+
+    scheduleFPUpdate() {
+        if (this.fpUpdateTimeout) clearTimeout(this.fpUpdateTimeout);
+        this.fpUpdateTimeout = setTimeout(() => this.generateFlightPlan(), 500);
     }
 
     async fetchTerrainHeights(latlngs) {
@@ -506,7 +512,7 @@ class App {
         this.updateFPStats(parseFloat(document.getElementById('fp-speed').value) || 10);
     }
 
-    generateFlightPlan() {
+    async generateFlightPlan() {
         const id = document.getElementById('fp-field-id').value;
         const field = this.fields.find(f => String(f.id) === String(id));
         if (!field) return;
