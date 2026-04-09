@@ -17,6 +17,7 @@ class App {
         this.btnGenerateFP = document.getElementById('btn-generate-fp');
         this.btnReverseFP = document.getElementById('btn-reverse-fp');
         this.btnExportFPKML = document.getElementById('btn-export-fp-kml');
+        this.terrainFollowingCheckbox = document.getElementById('fp-terrain-following');
 
         this.waypointTableBody = document.querySelector('#waypoint-table tbody');
         this.waypointTableContainer = document.getElementById('waypoint-table-container');
@@ -233,6 +234,52 @@ class App {
         document.getElementById('fp-clip-corners').addEventListener('change', () => {
             this.generateFlightPlan();
         });
+
+        this.terrainFollowingCheckbox.addEventListener('change', () => {
+            this.generateFlightPlan();
+        });
+    }
+
+    async fetchTerrainHeights(latlngs) {
+        if (!latlngs || latlngs.length === 0) return [];
+        const locations = latlngs.map(ll => ({ latitude: ll.lat, longitude: ll.lng }));
+        const results = [];
+        const batchSize = 100;
+
+        const tryFetch = async (dataset, batch) => {
+            const response = await fetch(`https://api.opentopodata.org/v1/${dataset}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ locations: batch })
+            });
+            const data = await response.json();
+            if (data.status === 'OK') {
+                return data.results;
+            }
+            throw new Error(data.error || 'Unbekannter Fehler');
+        };
+
+        for (let i = 0; i < locations.length; i += batchSize) {
+            const batch = locations.slice(i, i + batchSize);
+            let batchResults;
+            try {
+                batchResults = await tryFetch('eudem25m', batch);
+            } catch (err) {
+                console.warn(`Primary dataset (eudem25m) failed: ${err.message}. Trying fallback...`);
+                try {
+                    batchResults = await tryFetch('srtm30m', batch);
+                } catch (fallbackErr) {
+                    throw new Error('Fehler beim Abrufen der Geländehöhen (auch Fallback fehlgeschlagen): ' + fallbackErr.message);
+                }
+            }
+            results.push(...batchResults);
+
+            // Rate limit handling for public API
+            if (i + batchSize < locations.length) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+        return results;
     }
 
     updateFieldList() {
@@ -416,11 +463,13 @@ class App {
         const latlngs = this.currentFlightPath.getLatLngs();
 
         latlngs.forEach((ll, idx) => {
+            const absHeight = ll.alt !== undefined ? ll.alt.toFixed(1) : '-';
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${idx + 1}</td>
                 <td><input type="number" step="0.000001" value="${ll.lat.toFixed(6)}" data-idx="${idx}" data-type="lat"></td>
                 <td><input type="number" step="0.000001" value="${ll.lng.toFixed(6)}" data-idx="${idx}" data-type="lng"></td>
+                <td><input type="number" step="0.1" value="${absHeight}" data-idx="${idx}" data-type="alt" ${this.terrainFollowingCheckbox.checked ? '' : 'disabled'}></td>
                 <td><button type="button" class="btn secondary small action-delete-wp">Löschen</button></td>
             `;
             tr.querySelector('.action-delete-wp').addEventListener('click', () => this.removeWaypoint(idx));
@@ -434,7 +483,9 @@ class App {
                 const val = parseFloat(e.target.value);
                 const currentLatLngs = this.currentFlightPath.getLatLngs();
                 if (type === 'lat') currentLatLngs[idx].lat = val;
-                else currentLatLngs[idx].lng = val;
+                else if (type === 'lng') currentLatLngs[idx].lng = val;
+                else if (type === 'alt') currentLatLngs[idx].alt = val;
+
                 this.currentFlightPath.setLatLngs(currentLatLngs);
                 this.updateWaypointMarkers();
                 this.updateFPStats(parseFloat(document.getElementById('fp-speed').value) || 10);
@@ -645,7 +696,29 @@ class App {
         }
         this.wpLayerGroup.clearLayers();
 
-        const latlngs = pathPoints.map(p => [p[1], p[0]]);
+        let latlngs = pathPoints.map(p => L.latLng(p[1], p[0]));
+
+        if (this.terrainFollowingCheckbox.checked) {
+            const originalBtnText = this.btnGenerateFP.textContent;
+            this.btnGenerateFP.textContent = "Höhendaten laden...";
+            this.btnGenerateFP.disabled = true;
+
+            try {
+                const terrainData = await this.fetchTerrainHeights(latlngs);
+                const flightHeight = parseFloat(document.getElementById('fp-height').value) || 15;
+                latlngs.forEach((ll, idx) => {
+                    const terrainHeight = terrainData[idx].elevation;
+                    ll.alt = terrainHeight + flightHeight;
+                });
+            } catch (err) {
+                alert(err.message);
+                this.terrainFollowingCheckbox.checked = false;
+            } finally {
+                this.btnGenerateFP.textContent = originalBtnText;
+                this.btnGenerateFP.disabled = false;
+            }
+        }
+
         this.currentFlightPath = L.polyline(latlngs, { color: 'red', weight: 3 });
 
         this.updateWaypointMarkers();
@@ -675,6 +748,7 @@ class App {
         this.wpLayerGroup.clearLayers();
         const latlngs = this.currentFlightPath.getLatLngs();
         const total = latlngs.length;
+        const terrainFollowing = this.terrainFollowingCheckbox.checked;
 
         let step = 1;
         if (total > 100) step = 2;
@@ -686,11 +760,15 @@ class App {
             const shouldShow = isFirst || isLast || ((idx + 1) % step === 0);
 
             if (shouldShow) {
+                let html = `<span>${idx + 1}</span>`;
+                if (terrainFollowing && (isFirst || isLast) && ll.alt !== undefined) {
+                    html = `<span>${idx + 1}<br><small>${ll.alt.toFixed(1)}m</small></span>`;
+                }
                 const icon = L.divIcon({
                     className: 'wp-number-icon' + (isFirst ? ' wp-start' : '') + (isLast ? ' wp-end' : ''),
-                    html: `<span>${idx + 1}</span>`,
-                    iconSize: [20, 20],
-                    iconAnchor: [10, 10]
+                    html: html,
+                    iconSize: terrainFollowing && (isFirst || isLast) ? [40, 40] : [20, 20],
+                    iconAnchor: terrainFollowing && (isFirst || isLast) ? [20, 20] : [10, 10]
                 });
                 L.marker(ll, { icon: icon, interactive: false }).addTo(this.wpLayerGroup);
             }
@@ -868,9 +946,14 @@ class App {
         const field = this.fields.find(f => String(f.id) === String(id));
         const name = (field ? field.name : 'Flugplan') + '_DJI';
 
-        const height = parseFloat(document.getElementById('fp-height').value) || 15;
+        const defaultHeight = parseFloat(document.getElementById('fp-height').value) || 15;
         const latlngs = this.currentFlightPath.getLatLngs();
-        const coords = latlngs.map(ll => `${ll.lng},${ll.lat},${height}`).join(' ');
+        const terrainFollowing = this.terrainFollowingCheckbox.checked;
+        const altitudeMode = terrainFollowing ? 'absolute' : 'relativeToGround';
+        const coords = latlngs.map(ll => {
+            const h = (terrainFollowing && ll.alt !== undefined) ? ll.alt : defaultHeight;
+            return `${ll.lng},${ll.lat},${h}`;
+        }).join(' ');
 
         const escapeXml = (unsafe) => {
             return unsafe.replace(/[<>&'"]/g, (c) => {
@@ -891,6 +974,7 @@ class App {
     <Placemark>
       <name>Waypoints</name>
       <LineString>
+        <altitudeMode>${altitudeMode}</altitudeMode>
         <coordinates>${coords}</coordinates>
       </LineString>
     </Placemark>
