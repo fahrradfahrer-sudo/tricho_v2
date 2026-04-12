@@ -17,6 +17,7 @@ class App {
         this.btnGenerateFP = document.getElementById('btn-generate-fp');
         this.btnReverseFP = document.getElementById('btn-reverse-fp');
         this.btnExportFPKML = document.getElementById('btn-export-fp-kml');
+        this.btnExportFPKMZ = document.getElementById('btn-export-fp-kmz');
         this.terrainFollowingCheckbox = document.getElementById('fp-terrain-following');
 
         this.waypointTableBody = document.querySelector('#waypoint-table tbody');
@@ -113,6 +114,10 @@ class App {
 
         this.btnExportFPKML.addEventListener('click', () => {
             this.exportFlightPlanKML();
+        });
+
+        this.btnExportFPKMZ.addEventListener('click', () => {
+            this.exportFlightPlanKMZ();
         });
 
         this.btnReverseFP.addEventListener('click', () => {
@@ -237,7 +242,22 @@ class App {
         });
 
         this.terrainFollowingCheckbox.addEventListener('change', () => {
+            const heightModeContainer = document.getElementById('fp-height-mode-container');
+            if (this.terrainFollowingCheckbox.checked) {
+                heightModeContainer.classList.remove('hidden');
+            } else {
+                heightModeContainer.classList.add('hidden');
+            }
             this.scheduleFPUpdate();
+        });
+
+        document.getElementById('fp-rc-lost-action').addEventListener('change', (e) => {
+            const container = document.getElementById('fp-execute-rc-lost-action-container');
+            if (e.target.value === 'executeLostAction') {
+                container.classList.remove('hidden');
+            } else {
+                container.classList.add('hidden');
+            }
         });
     }
 
@@ -348,6 +368,7 @@ class App {
             // Reset stats and export button for new field
             document.getElementById('fp-stats').classList.add('hidden');
             this.btnExportFPKML.classList.add('hidden');
+            this.btnExportFPKMZ.classList.add('hidden');
             this.btnReverseFP.classList.add('hidden');
 
             if (this.currentFlightPath) {
@@ -740,6 +761,7 @@ class App {
 
         document.getElementById('fp-stats').classList.remove('hidden');
         this.btnExportFPKML.classList.remove('hidden');
+        this.btnExportFPKMZ.classList.remove('hidden');
         this.btnReverseFP.classList.remove('hidden');
     }
 
@@ -999,6 +1021,131 @@ class App {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    }
+
+    async exportFlightPlanKMZ() {
+        if (!this.currentFlightPath) return;
+
+        const id = document.getElementById('fp-field-id').value;
+        const field = this.fields.find(f => String(f.id) === String(id));
+        const name = (field ? field.name : 'Flugplan');
+
+        const droneEnumValue = document.getElementById('fp-drone-info').value;
+        const finishAction = document.getElementById('fp-finish-action').value;
+        const exitOnRCLost = document.getElementById('fp-rc-lost-action').value;
+        const executeRCLostAction = document.getElementById('fp-execute-rc-lost-action').value;
+        const flyToWaylineMode = document.getElementById('fp-fly-to-wayline-mode').value;
+        const takeOffSecurityHeight = document.getElementById('fp-takeoff-security-height').value;
+        const waypointTurnMode = document.getElementById('fp-waypoint-turn-mode').value;
+        const waypointHeadingMode = document.getElementById('fp-waypoint-heading-mode').value;
+
+        const speed = parseFloat(document.getElementById('fp-speed').value) || 12;
+        const globalHeight = parseFloat(document.getElementById('fp-height').value) || 15;
+
+        const terrainFollowing = this.terrainFollowingCheckbox.checked;
+        const heightMode = terrainFollowing ? document.getElementById('fp-height-mode').value : 'relativeToStartPoint';
+
+        const latlngs = this.currentFlightPath.getLatLngs();
+        const createTime = Date.now();
+        const updateTime = createTime;
+
+        const escapeXml = (unsafe) => {
+            return unsafe.replace(/[<>&'"]/g, (c) => {
+                switch (c) {
+                    case '<': return '&lt;';
+                    case '>': return '&gt;';
+                    case '&': return '&amp;';
+                    case '\'': return '&apos;';
+                    case '"': return '&quot;';
+                }
+            });
+        };
+
+        let placemarks = '';
+        latlngs.forEach((ll, idx) => {
+            const h = (ll.alt !== undefined) ? ll.alt.toFixed(2) : globalHeight.toFixed(2);
+            placemarks += `
+      <Placemark>
+        <Point>
+          <coordinates>${ll.lng},${ll.lat}</coordinates>
+        </Point>
+        <wpml:index>${idx}</wpml:index>
+        <wpml:useGlobalHeight>0</wpml:useGlobalHeight>
+        <wpml:ellipsoidHeight>${h}</wpml:ellipsoidHeight>
+        <wpml:height>${h}</wpml:height>
+        <wpml:waypointSpeed>${speed}</wpml:waypointSpeed>
+        <wpml:useGlobalSpeed>0</wpml:useGlobalSpeed>
+        <wpml:useStraightLine>1</wpml:useStraightLine>
+        <wpml:waypointTurnParam>
+          <wpml:waypointTurnDampingDist>0</wpml:waypointTurnDampingDist>
+          <wpml:waypointTurnMode>${waypointTurnMode}</wpml:waypointTurnMode>
+        </wpml:waypointTurnParam>
+        <wpml:waypointHeadingParam>
+          <wpml:useGlobalHeadingParam>0</wpml:useGlobalHeadingParam>
+          <wpml:waypointHeadingMode>${waypointHeadingMode}</wpml:waypointHeadingMode>
+          <wpml:waypointHeadingYawPathMode>followBadArc</wpml:waypointHeadingYawPathMode>
+        </wpml:waypointHeadingParam>
+      </Placemark>`;
+        });
+
+        const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2">
+  <Document>
+    <wpml:author>UAV</wpml:author>
+    <wpml:createTime>${createTime}</wpml:createTime>
+    <wpml:updateTime>${updateTime}</wpml:updateTime>
+    <wpml:missionConfig>
+      <wpml:droneInfo>
+        <wpml:droneEnumValue>${droneEnumValue}</wpml:droneEnumValue>
+        <wpml:droneSubEnumValue>0</wpml:droneSubEnumValue>
+      </wpml:droneInfo>
+      <wpml:finishAction>${finishAction}</wpml:finishAction>
+      <wpml:exitOnRCLost>${exitOnRCLost}</wpml:exitOnRCLost>
+      <wpml:executeRCLostAction>${executeRCLostAction}</wpml:executeRCLostAction>
+      <wpml:flyToWaylineMode>${flyToWaylineMode}</wpml:flyToWaylineMode>
+      <wpml:takeOffSecurityHeight>${takeOffSecurityHeight}</wpml:takeOffSecurityHeight>
+      <wpml:globalTransitionalSpeed>${speed}</wpml:globalTransitionalSpeed>
+    </wpml:missionConfig>
+    <Folder>
+      <wpml:globalHeight>${globalHeight}</wpml:globalHeight>
+      <wpml:caliFlightEnable>0</wpml:caliFlightEnable>
+      <wpml:autoFlightSpeed>${speed}</wpml:autoFlightSpeed>
+      <wpml:globalWaypointHeadingParam>
+        <wpml:waypointHeadingMode>${waypointHeadingMode}</wpml:waypointHeadingMode>
+      </wpml:globalWaypointHeadingParam>
+      <wpml:globalWaypointTurnMode>${waypointTurnMode}</wpml:globalWaypointTurnMode>
+      <wpml:globalUseStraightLine>1</wpml:globalUseStraightLine>
+      <wpml:waylineCoordinateSysParam>
+        <wpml:coordinateMode>WGS84</wpml:coordinateMode>
+        <wpml:heightMode>${heightMode}</wpml:heightMode>
+        <wpml:positioningType>GPS</wpml:positioningType>
+      </wpml:waylineCoordinateSysParam>
+      <wpml:gimbalPitchMode>manual</wpml:gimbalPitchMode>
+      <wpml:templateType>waypoint</wpml:templateType>
+      <wpml:templateId>0</wpml:templateId>
+      ${placemarks}
+    </Folder>
+  </Document>
+</kml>`;
+
+        try {
+            const zip = new JSZip();
+            const wpmz = zip.folder("wpmz");
+            wpmz.file("template.kml", kmlContent);
+
+            const content = await zip.generateAsync({type:"blob"});
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${name}.kmz`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error(err);
+            alert("Fehler bei der KMZ-Erstellung: " + err.message);
+        }
     }
 
     exportFieldKML(id) {

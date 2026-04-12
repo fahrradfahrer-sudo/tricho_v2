@@ -163,6 +163,86 @@
                             <label for="fp-terrain-following">Geländefolgemodus (Terrain Following)</label>
                         </div>
 
+                        <div id="fp-height-mode-container" class="form-group hidden">
+                            <label for="fp-height-mode">Höhenmodus:</label>
+                            <select id="fp-height-mode">
+                                <option value="relativeToStartPoint">Relativ (relativeToStartPoint)</option>
+                                <option value="absolute">Absolut (AMSL)</option>
+                            </select>
+                        </div>
+
+                        <hr>
+                        <h4>DJI KMZ Parameter</h4>
+
+                        <div class="form-group">
+                            <label for="fp-drone-info">Drohnentyp:</label>
+                            <select id="fp-drone-info">
+                                <option value="60">M300 RTK (60)</option>
+                                <option value="67">M30 / M30T (67)</option>
+                                <option value="77">M3E / M3T (77)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fp-finish-action">Aktion nach Beendigung:</label>
+                            <select id="fp-finish-action">
+                                <option value="goHome">Zurück zum Start (Go Home)</option>
+                                <option value="noAction">Keine Aktion</option>
+                                <option value="land">Landen</option>
+                                <option value="autoLand">Auto Landen</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fp-rc-lost-action">Bei RC-Verlust:</label>
+                            <select id="fp-rc-lost-action">
+                                <option value="executeLostAction">Aktion ausführen</option>
+                                <option value="hover">Schweben</option>
+                            </select>
+                        </div>
+
+                        <div id="fp-execute-rc-lost-action-container" class="form-group">
+                            <label for="fp-execute-rc-lost-action">Ausgeführte Aktion bei RC-Verlust:</label>
+                            <select id="fp-execute-rc-lost-action">
+                                <option value="goBack">Zurückkehren (Go Back)</option>
+                                <option value="landing">Landen</option>
+                                <option value="hover">Schweben</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fp-fly-to-wayline-mode">Anflug zum Wegpunkt:</label>
+                            <select id="fp-fly-to-wayline-mode">
+                                <option value="safely">Sicher (safely)</option>
+                                <option value="pointToPoint">Direkt (pointToPoint)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fp-takeoff-security-height">Sicherheitshöhe beim Start (m):</label>
+                            <input type="number" id="fp-takeoff-security-height" value="2" min="1" max="50" step="0.5">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fp-waypoint-turn-mode">Kurvenmodus:</label>
+                            <select id="fp-waypoint-turn-mode">
+                                <option value="coordinateTurn">Koordiniert (coordinateTurn)</option>
+                                <option value="toPointAndStopWithDiscontinuityCurvature">Anhalten und Drehen</option>
+                                <option value="toPointAndStopWithContinuityCurvature">Anhalten (kontinuierlich)</option>
+                                <option value="toPointAndPassWithContinuityCurvature">Vorbeifliegen</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="fp-waypoint-heading-mode">Ausrichtung (Heading):</label>
+                            <select id="fp-waypoint-heading-mode">
+                                <option value="followWayline">Flugpfad folgen</option>
+                                <option value="manual">Manuell</option>
+                                <option value="fixed">Fixiert</option>
+                                <option value="smoothTransition">Fließender Übergang</option>
+                            </select>
+                        </div>
+
                         <div id="fp-stats" class="fp-stats hidden">
                             <p>Pfadlänge: <span id="fp-length">0</span> m</p>
                             <p>Geschätzte Dauer: <span id="fp-duration">0</span> min</p>
@@ -172,6 +252,7 @@
                             <button type="button" id="btn-reverse-fp" class="btn secondary small hidden">Startpunkt drehen</button>
                             <button type="button" id="btn-generate-fp" class="btn success small">Generieren</button>
                             <button type="button" id="btn-export-fp-kml" class="btn secondary small hidden">KML Export</button>
+                            <button type="button" id="btn-export-fp-kmz" class="btn primary small hidden">KMZ Export (DJI)</button>
                         </div>
                     </form>
 
@@ -209,6 +290,8 @@
     <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
     <!-- For KML Support -->
     <script src="https://unpkg.com/leaflet-omnivore@0.3.4/leaflet-omnivore.min.js"></script>
+    <!-- For KMZ Support -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <!-- App Logic -->
     <script src="js/map.js"></script>
     <script src="js/app.js"></script>
