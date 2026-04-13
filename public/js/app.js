@@ -19,6 +19,8 @@ class App {
         this.btnExportFPKML = document.getElementById('btn-export-fp-kml');
         this.btnExportFPKMZ = document.getElementById('btn-export-fp-kmz');
         this.terrainFollowingCheckbox = document.getElementById('fp-terrain-following');
+        this.showWPHeightCheckbox = document.getElementById('fp-show-wp-height');
+        this.editWaypointsCheckbox = document.getElementById('fp-edit-waypoints');
 
         this.waypointTableBody = document.querySelector('#waypoint-table tbody');
         this.waypointTableContainer = document.getElementById('waypoint-table-container');
@@ -35,6 +37,10 @@ class App {
     initMap() {
         this.mapManager = new MapManager('map');
         this.wpLayerGroup = L.layerGroup().addTo(this.mapManager.map);
+
+        this.mapManager.map.on('zoomend', () => {
+            this.updateWaypointMarkers();
+        });
 
         this.mapManager.onFieldAdded = (layer, name) => {
             const field = {
@@ -245,10 +251,27 @@ class App {
             const heightModeContainer = document.getElementById('fp-height-mode-container');
             if (this.terrainFollowingCheckbox.checked) {
                 heightModeContainer.classList.remove('hidden');
+                this.showWPHeightCheckbox.disabled = false;
+                this.showWPHeightCheckbox.checked = true;
             } else {
                 heightModeContainer.classList.add('hidden');
+                this.showWPHeightCheckbox.disabled = true;
+                this.showWPHeightCheckbox.checked = false;
             }
             this.scheduleFPUpdate();
+        });
+
+        this.showWPHeightCheckbox.addEventListener('change', () => {
+            this.updateWaypointMarkers();
+        });
+
+        this.editWaypointsCheckbox.addEventListener('change', () => {
+            if (!this.currentFlightPath) return;
+            if (this.editWaypointsCheckbox.checked) {
+                if (this.currentFlightPath.editing) this.currentFlightPath.editing.enable();
+            } else {
+                if (this.currentFlightPath.editing) this.currentFlightPath.editing.disable();
+            }
         });
 
         document.getElementById('fp-rc-lost-action').addEventListener('change', (e) => {
@@ -386,7 +409,10 @@ class App {
             this.updateFPStats(speed);
             this.updateWaypointMarkers();
             this.updateWaypointTable();
-            if (this.currentFlightPath.editing) this.currentFlightPath.editing.enable();
+            if (this.currentFlightPath.editing) {
+                if (this.editWaypointsCheckbox.checked) this.currentFlightPath.editing.enable();
+                else this.currentFlightPath.editing.disable();
+            }
         } else {
             this.generateFlightPlan();
         }
@@ -755,7 +781,10 @@ class App {
         this.updateWaypointTable();
 
         this.mapManager.drawnItems.addLayer(this.currentFlightPath);
-        if (this.currentFlightPath.editing) this.currentFlightPath.editing.enable();
+        if (this.currentFlightPath.editing) {
+            if (this.editWaypointsCheckbox.checked) this.currentFlightPath.editing.enable();
+            else this.currentFlightPath.editing.disable();
+        }
 
         this.updateFPStats(speed);
 
@@ -780,10 +809,18 @@ class App {
         const latlngs = this.currentFlightPath.getLatLngs();
         const total = latlngs.length;
         const terrainFollowing = this.terrainFollowingCheckbox.checked;
+        const showWPHeight = this.showWPHeightCheckbox.checked;
+        const zoom = this.mapManager.map.getZoom();
 
+        // Dynamic density based on zoom
         let step = 1;
-        if (total > 100) step = 2;
-        if (total > 300) step = 5;
+        if (zoom < 15) {
+            step = total > 100 ? 10 : 5;
+        } else if (zoom < 17) {
+            step = total > 100 ? 5 : 2;
+        } else if (zoom < 19) {
+            step = total > 300 ? 2 : 1;
+        }
 
         latlngs.forEach((ll, idx) => {
             const isLast = idx === total - 1;
@@ -791,15 +828,19 @@ class App {
             const shouldShow = isFirst || isLast || ((idx + 1) % step === 0);
 
             if (shouldShow) {
-                let html = `<span>${idx + 1}</span>`;
-                if (terrainFollowing && (isFirst || isLast) && ll.alt !== undefined) {
-                    html = `<span>${idx + 1}<br><small>${ll.alt.toFixed(1)}m</small></span>`;
+                let html = `<div class="wp-num">${idx + 1}</div>`;
+                const hasAlt = ll.alt !== undefined;
+
+                if (hasAlt && terrainFollowing && (showWPHeight || isFirst || isLast)) {
+                    const roundedHeight = Math.round(ll.alt);
+                    html += `<div class="wp-height">(${roundedHeight} m)</div>`;
                 }
+
                 const icon = L.divIcon({
                     className: 'wp-number-icon' + (isFirst ? ' wp-start' : '') + (isLast ? ' wp-end' : ''),
                     html: html,
-                    iconSize: terrainFollowing && (isFirst || isLast) ? [40, 40] : [20, 20],
-                    iconAnchor: terrainFollowing && (isFirst || isLast) ? [20, 20] : [10, 10]
+                    iconSize: null,
+                    iconAnchor: [0, 0]
                 });
                 L.marker(ll, { icon: icon, interactive: false }).addTo(this.wpLayerGroup);
             }

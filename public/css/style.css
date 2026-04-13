@@ -234,9 +234,6 @@ hr {
 }
 
 .wp-number-icon {
-    background: white;
-    border: 1px solid red;
-    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -244,18 +241,44 @@ hr {
     font-weight: bold;
     color: red;
     opacity: 0.8;
+    white-space: nowrap;
+    transform: translate(-50%, -50%);
 }
 
-.wp-number-icon.wp-start {
+.wp-number-icon .wp-num {
+    background: white;
+    border: 1px solid red;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.wp-number-icon .wp-height {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #666;
+    border-radius: 3px;
+    padding: 1px 3px;
+    margin-left: 2px;
+    font-size: 9px;
+    color: #333;
+}
+
+.wp-number-icon.wp-start .wp-num {
     background: #28a745;
     color: white;
     border-color: #1e7e34;
-    z-index: 1000 !important;
 }
 
-.wp-number-icon.wp-end {
+.wp-number-icon.wp-end .wp-num {
     background: #dc3545;
     color: white;
     border-color: #bd2130;
+}
+
+.wp-number-icon.wp-start, .wp-number-icon.wp-end {
     z-index: 1000 !important;
 }
