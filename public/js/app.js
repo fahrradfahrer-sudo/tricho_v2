@@ -239,7 +239,7 @@ class App {
         syncInput('slider-fp-speed', 'fp-speed', 'val-fp-speed');
         syncInput('slider-fp-height', 'fp-height', 'val-fp-height');
 
-        document.getElementById('fp-curved').addEventListener('change', () => {
+        document.getElementById('fp-mode').addEventListener('change', () => {
             this.generateFlightPlan();
         });
 
@@ -569,9 +569,10 @@ class App {
 
         const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
         const borderDistance = parseFloat(document.getElementById('fp-border-distance').value) || 5;
+        const minPointDist = parseFloat(document.getElementById('fp-min-dist').value) || 5;
         let orientation = document.getElementById('fp-orientation').value;
         const speed = parseFloat(document.getElementById('fp-speed').value) || 10;
-        const isCurved = document.getElementById('fp-curved').checked;
+        const fpMode = document.getElementById('fp-mode').value;
         const clipCorners = document.getElementById('fp-clip-corners').checked;
 
         const geoJson = JSON.parse(field.geometry);
@@ -606,7 +607,7 @@ class App {
         virtualBorder = this.simplifyGeo(virtualBorder, 0.1);
         let pathPoints = [];
 
-        if (isCurved) {
+        if (fpMode === 'curved') {
             // Keep existing curved logic but use the new virtual border
             let currentBufferDist = 0;
             let direction = 1;
@@ -661,90 +662,33 @@ class App {
                 direction *= -1;
                 if (currentBufferDist > 10000) break;
             }
+            pathPoints = this.simplifyPath(pathPoints, minPointDist, virtualBorder);
         } else {
-            // New Zigzag Logic
-            if (orientation === "" || orientation === null || orientation === "0") {
-                orientation = this.calculateOptimalOrientation(virtualBorder);
+            // Zigzag or Intelligent Logic
+            let finalOrientation;
+            if (orientation !== "" && orientation !== null && orientation !== "0") {
+                finalOrientation = parseFloat(orientation);
+                pathPoints = this.calculateZigzagPoints(virtualBorder, finalOrientation, pathDistance);
+                pathPoints = this.simplifyPath(pathPoints, minPointDist, virtualBorder);
+            } else if (fpMode === 'intelligent') {
+                const result = this.calculateIntelligentPath(virtualBorder, pathDistance, minPointDist);
+                pathPoints = result.points;
+                finalOrientation = result.orientation;
+                // orientation for display/stats
+                document.getElementById('val-fp-orientation').textContent = Math.round(finalOrientation);
             } else {
-                orientation = parseFloat(orientation);
+                // Default Zigzag (Auto)
+                finalOrientation = this.calculateOptimalOrientation(virtualBorder);
+                pathPoints = this.calculateZigzagPoints(virtualBorder, finalOrientation, pathDistance);
+                pathPoints = this.simplifyPath(pathPoints, minPointDist, virtualBorder);
+                document.getElementById('val-fp-orientation').textContent = Math.round(finalOrientation);
             }
 
-            const center = turf.center(virtualBorder);
-            const rotatedVB = turf.transformRotate(virtualBorder, -orientation, { pivot: center });
-            const bbox = turf.bbox(rotatedVB);
-
-            // Use a more precise lat spacing calculation
-            const pStart = [bbox[0], bbox[1]];
-            const pNext = turf.destination(turf.point(pStart), pathDistance, 0, {units:'meters'}).geometry.coordinates;
-            const latSpacing = Math.abs(pNext[1] - pStart[1]);
-
-            let currentY = bbox[1] + latSpacing / 2;
-            let rows = [];
-
-            while (currentY < bbox[3]) {
-                const line = turf.lineString([[bbox[0] - 0.01, currentY], [bbox[2] + 0.01, currentY]]);
-                const intersects = turf.lineIntersect(line, rotatedVB);
-
-                if (intersects.features.length >= 2) {
-                    let pts = intersects.features.map(f => f.geometry.coordinates);
-                    pts.sort((a, b) => a[0] - b[0]);
-
-                    let rowSegments = [];
-                    for (let j = 0; j < pts.length - 1; j++) {
-                        let p1 = pts[j];
-                        let p2 = pts[j + 1];
-                        let mid = turf.midpoint(p1, p2);
-                        if (turf.booleanPointInPolygon(mid, rotatedVB)) {
-                            rowSegments.push([p1, p2]);
-                        }
-                    }
-                    if (rowSegments.length > 0) {
-                        rows.push(rowSegments);
-                    }
-                }
-                currentY += latSpacing;
-            }
-
-            if (rows.length === 0) {
+            if (pathPoints.length === 0) {
                 alert('Konnte keinen Flugplan generieren. Prüfen Sie die Parameter (Abstand zum Rand evtl. zu groß).');
                 return;
             }
-
-            let rotatedPath = [];
-            rows.forEach((row, i) => {
-                const isForward = (i % 2 === 0);
-                const segments = isForward ? row : [...row].reverse();
-
-                segments.forEach(seg => {
-                    const p1 = isForward ? seg[0] : seg[1];
-                    const p2 = isForward ? seg[1] : seg[0];
-
-                    if (rotatedPath.length > 0) {
-                        const prev = rotatedPath[rotatedPath.length - 1];
-                        let connection = this.getBorderPath(prev, p1, rotatedVB);
-                        connection.forEach(p => {
-                            if (turf.distance(rotatedPath[rotatedPath.length - 1], p, { units: 'meters' }) > 0.1) {
-                                rotatedPath.push(p);
-                            }
-                        });
-                    }
-
-                    if (rotatedPath.length === 0 || turf.distance(rotatedPath[rotatedPath.length - 1], p1, { units: 'meters' }) > 0.1) {
-                        rotatedPath.push(p1);
-                    }
-                    if (turf.distance(rotatedPath[rotatedPath.length - 1], p2, { units: 'meters' }) > 0.1) {
-                        rotatedPath.push(p2);
-                    }
-                });
-            });
-
-            const pathLine = turf.lineString(rotatedPath);
-            const unrotatedPath = turf.transformRotate(pathLine, orientation, { pivot: center });
-            pathPoints = unrotatedPath.geometry.coordinates;
         }
-
-        const minPointDist = parseFloat(document.getElementById('fp-min-dist').value) || 5;
-        pathPoints = this.simplifyPath(pathPoints, minPointDist, virtualBorder);
 
         // Display
         if (this.currentFlightPath) {
@@ -983,6 +927,120 @@ class App {
     }
 
     // Skip old simplifyPath implementation
+    calculateZigzagPoints(virtualBorder, orientation, pathDistance) {
+        const center = turf.center(virtualBorder);
+        const rotatedVB = turf.transformRotate(virtualBorder, -orientation, { pivot: center });
+        const bbox = turf.bbox(rotatedVB);
+
+        const pStart = [bbox[0], bbox[1]];
+        const pNext = turf.destination(turf.point(pStart), pathDistance, 0, { units: 'meters' }).geometry.coordinates;
+        const latSpacing = Math.abs(pNext[1] - pStart[1]);
+
+        let currentY = bbox[1] + latSpacing / 2;
+        let rows = [];
+
+        while (currentY < bbox[3]) {
+            const line = turf.lineString([[bbox[0] - 0.01, currentY], [bbox[2] + 0.01, currentY]]);
+            const intersects = turf.lineIntersect(line, rotatedVB);
+
+            if (intersects.features.length >= 2) {
+                let pts = intersects.features.map(f => f.geometry.coordinates);
+                pts.sort((a, b) => a[0] - b[0]);
+
+                let rowSegments = [];
+                for (let j = 0; j < pts.length - 1; j++) {
+                    let p1 = pts[j];
+                    let p2 = pts[j + 1];
+                    let mid = turf.midpoint(p1, p2);
+                    if (turf.booleanPointInPolygon(mid, rotatedVB)) {
+                        rowSegments.push([p1, p2]);
+                    }
+                }
+                if (rowSegments.length > 0) {
+                    rows.push(rowSegments);
+                }
+            }
+            currentY += latSpacing;
+        }
+
+        if (rows.length === 0) return [];
+
+        let rotatedPath = [];
+        rows.forEach((row, i) => {
+            const isForward = (i % 2 === 0);
+            const segments = isForward ? row : [...row].reverse();
+
+            segments.forEach(seg => {
+                const p1 = isForward ? seg[0] : seg[1];
+                const p2 = isForward ? seg[1] : seg[0];
+
+                if (rotatedPath.length > 0) {
+                    const prev = rotatedPath[rotatedPath.length - 1];
+                    let connection = this.getBorderPath(prev, p1, rotatedVB);
+                    connection.forEach(p => {
+                        if (turf.distance(rotatedPath[rotatedPath.length - 1], p, { units: 'meters' }) > 0.1) {
+                            rotatedPath.push(p);
+                        }
+                    });
+                }
+
+                if (rotatedPath.length === 0 || turf.distance(rotatedPath[rotatedPath.length - 1], p1, { units: 'meters' }) > 0.1) {
+                    rotatedPath.push(p1);
+                }
+                if (turf.distance(rotatedPath[rotatedPath.length - 1], p2, { units: 'meters' }) > 0.1) {
+                    rotatedPath.push(p2);
+                }
+            });
+        });
+
+        const pathLine = turf.lineString(rotatedPath);
+        const unrotatedPath = turf.transformRotate(pathLine, orientation, { pivot: center });
+        return unrotatedPath.geometry.coordinates;
+    }
+
+    calculateIntelligentPath(virtualBorder, pathDistance, minPointDist) {
+        let results = [];
+        let minDistance = Infinity;
+
+        // Sample orientations from 0 to 175 degrees in steps of 5
+        for (let angle = 0; angle < 180; angle += 5) {
+            let points = this.calculateZigzagPoints(virtualBorder, angle, pathDistance);
+            if (points.length === 0) continue;
+
+            points = this.simplifyPath(points, minPointDist, virtualBorder);
+
+            let totalDist = 0;
+            for (let i = 0; i < points.length - 1; i++) {
+                totalDist += turf.distance(points[i], points[i+1], { units: 'meters' });
+            }
+
+            if (totalDist < minDistance) minDistance = totalDist;
+
+            results.push({
+                orientation: angle,
+                points: points,
+                distance: totalDist,
+                pointCount: points.length
+            });
+        }
+
+        if (results.length === 0) return { points: [], orientation: 0 };
+
+        // Threshold is 10% more than minDistance
+        const threshold = minDistance * 1.1;
+
+        // Filter results that are within 10% of minDistance
+        const candidates = results.filter(r => r.distance <= threshold);
+
+        // Sort candidates by point count (ascending)
+        candidates.sort((a, b) => a.pointCount - b.pointCount);
+
+        return {
+            points: candidates[0].points,
+            orientation: candidates[0].orientation
+        };
+    }
+
     calculateOptimalOrientation(polygon) {
         const hull = turf.convex(polygon);
         if (!hull) return 0;
