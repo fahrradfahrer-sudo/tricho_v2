@@ -83,7 +83,22 @@
         <!-- Step 2: Field Management -->
         <div id="step-2" class="step-container hidden">
             <div class="map-layout">
-                <div class="sidebar">
+                <div id="left-sidebar" class="sidebar">
+                    <div id="toggle-left-sidebar" class="sidebar-toggle left-toggle" title="Sidebar einklappen/ausklappen">
+                        <span></span>
+                    </div>
+                    <h3>Kundenverwaltung</h3>
+                    <div class="customer-tools">
+                        <select id="customer-select">
+                            <option value="">-- Kunde wählen --</option>
+                        </select>
+                        <div class="customer-actions">
+                            <button id="btn-load-customer" class="btn secondary small">Laden</button>
+                            <button id="btn-delete-customer" class="btn secondary small">Löschen</button>
+                            <button id="btn-new-customer" class="btn secondary small">Neu</button>
+                        </div>
+                    </div>
+                    <hr>
                     <h3>Schlagverwaltung</h3>
                     <div class="search-tools">
                         <label for="search-postal-code">Karte zentrieren (PLZ):</label>
@@ -102,11 +117,17 @@
                     </div>
                     <div class="actions">
                         <button id="btn-submit" class="btn success">Antrag absenden</button>
+                        <button id="btn-undo" class="btn secondary" disabled>Rückgängig</button>
                         <button id="btn-prev-step" class="btn secondary">Zurück</button>
                     </div>
                 </div>
+                <div id="left-resizer" class="resizer"></div>
                 <div id="map"></div>
+                <div id="right-resizer" class="resizer hidden"></div>
                 <div id="flightplan-sidebar" class="sidebar right-sidebar hidden">
+                    <div id="toggle-right-sidebar" class="sidebar-toggle right-toggle" title="Flugplan einklappen/ausklappen">
+                        <span></span>
+                    </div>
                     <span id="close-fp-sidebar" class="close-btn">&times;</span>
                     <h3>Flugplan</h3>
                     <form id="flightplan-form">
