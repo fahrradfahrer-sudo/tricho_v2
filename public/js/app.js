@@ -26,8 +26,10 @@ class App {
         this.waypointTableContainer = document.getElementById('waypoint-table-container');
 
         this.fields = []; // Local storage for fields data
+        this.history = []; // History for undo
         this.currentFlightPath = null;
         this.fpUpdateTimeout = null;
+        this.currentCustomerId = null;
 
         this.initMap();
         this.attachEventListeners();
@@ -43,17 +45,39 @@ class App {
         });
 
         this.mapManager.onFieldAdded = (layer, name) => {
+            this.saveHistory();
             const field = {
                 id: L.stamp(layer),
                 name: name || `Schlag ${this.fields.length + 1}`,
                 geometry: JSON.stringify(layer.toGeoJSON().geometry),
-                area: L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]) / 10000 // In Hectares (Ha)
+                area: L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]) / 10000, // In Hectares (Ha)
+                // Default FP parameters
+                fp_path_distance: 10,
+                fp_border_distance: 5,
+                fp_min_dist: 5,
+                fp_orientation: 0,
+                fp_speed: 10,
+                fp_height: 15,
+                fp_mode: 'zigzag',
+                fp_clip_corners: 1,
+                fp_terrain_following: 0,
+                fp_show_wp_height: 0,
+                fp_height_mode: 'relativeToStartPoint',
+                fp_drone_info: '60',
+                fp_finish_action: 'goHome',
+                fp_rc_lost_action: 'executeLostAction',
+                fp_execute_rc_lost_action: 'goBack',
+                fp_fly_to_wayline_mode: 'safely',
+                fp_takeoff_security_height: 2,
+                fp_waypoint_turn_mode: 'coordinateTurn',
+                fp_waypoint_heading_mode: 'followWayline'
             };
             this.fields.push(field);
             this.updateFieldList();
         };
 
         this.mapManager.onFieldDeleted = (layer) => {
+            this.saveHistory();
             const id = L.stamp(layer);
             this.fields = this.fields.filter(f => f.id !== id);
             this.updateFieldList();
@@ -71,6 +95,7 @@ class App {
                 return;
             }
 
+            this.saveHistory();
             const field = this.fields.find(f => f.id === id);
             if (field) {
                 field.geometry = JSON.stringify(layer.toGeoJSON().geometry);
@@ -95,6 +120,25 @@ class App {
             this.submitApplication();
         });
 
+        document.getElementById('btn-undo').addEventListener('click', () => {
+            this.undo();
+        });
+
+        // Customer Management Listeners
+        document.getElementById('btn-load-customer').addEventListener('click', () => {
+            const id = document.getElementById('customer-select').value;
+            if (id) this.loadCustomerData(id);
+        });
+
+        document.getElementById('btn-delete-customer').addEventListener('click', () => {
+            const id = document.getElementById('customer-select').value;
+            if (id) this.deleteCustomer(id);
+        });
+
+        document.getElementById('btn-new-customer').addEventListener('click', () => {
+            this.resetToNewCustomer();
+        });
+
         this.importFileInput.addEventListener('change', (e) => {
             this.handleImport(e.target.files);
         });
@@ -105,6 +149,7 @@ class App {
 
         this.closeFPSidebar.addEventListener('click', () => {
             this.fpSidebar.classList.add('hidden');
+            document.getElementById('right-resizer').classList.add('hidden');
             this.waypointTableContainer.classList.add('hidden');
             if (this.currentFlightPath && this.currentFlightPath.editing) {
                 this.currentFlightPath.editing.disable();
@@ -117,6 +162,7 @@ class App {
         });
 
         this.initFPInputs();
+        this.initSidebarLogic();
 
         this.btnExportFPKML.addEventListener('click', () => {
             this.exportFlightPlanKML();
@@ -187,6 +233,9 @@ class App {
     }
 
     switchStep(step) {
+        if (step === 2) {
+            this.refreshCustomerList();
+        }
         if (step === 1) {
             this.step1.classList.remove('hidden');
             this.step2.classList.add('hidden');
@@ -210,58 +259,75 @@ class App {
     }
 
     initFPInputs() {
-        const syncInput = (sliderId, inputId, valSpanId, isOrientation = false) => {
+        const updateActiveFieldParam = (key, val) => {
+            const fieldId = document.getElementById('fp-field-id').value;
+            const field = this.fields.find(f => String(f.id) === String(fieldId));
+            if (field) {
+                field[key] = val;
+            }
+        };
+
+        const syncInput = (sliderId, inputId, valSpanId, paramKey, isOrientation = false) => {
             const slider = document.getElementById(sliderId);
             const input = document.getElementById(inputId);
             const valSpan = document.getElementById(valSpanId);
 
             const update = (val, source) => {
-                if (source !== 'slider') slider.value = val;
-                if (source !== 'input') input.value = val;
+                if (source !== 'slider' && slider) slider.value = val;
+                if (source !== 'input' && input) input.value = val;
 
                 if (isOrientation && (val == 0 || val === "" || val === "0")) {
-                    valSpan.textContent = "Auto";
-                    input.value = ""; // Empty for auto
+                    if (valSpan) valSpan.textContent = "Auto";
+                    if (input) input.value = ""; // Empty for auto
                 } else {
-                    valSpan.textContent = val;
+                    if (valSpan) valSpan.textContent = val;
                 }
+                updateActiveFieldParam(paramKey, val);
                 this.scheduleFPUpdate();
             };
 
-            slider.addEventListener('input', (e) => update(e.target.value, 'slider'));
-            input.addEventListener('change', (e) => update(e.target.value, 'input'));
+            if (slider) slider.addEventListener('input', (e) => update(e.target.value, 'slider'));
+            if (input) input.addEventListener('change', (e) => update(e.target.value, 'input'));
         };
 
-        syncInput('slider-fp-path-distance', 'fp-path-distance', 'val-fp-path-distance');
-        syncInput('slider-fp-min-dist', 'fp-min-dist', 'val-fp-min-dist');
-        syncInput('slider-fp-border-distance', 'fp-border-distance', 'val-fp-border-distance');
-        syncInput('slider-fp-orientation', 'fp-orientation', 'val-fp-orientation', true);
-        syncInput('slider-fp-speed', 'fp-speed', 'val-fp-speed');
-        syncInput('slider-fp-height', 'fp-height', 'val-fp-height');
+        syncInput('slider-fp-path-distance', 'fp-path-distance', 'val-fp-path-distance', 'fp_path_distance');
+        syncInput('slider-fp-min-dist', 'fp-min-dist', 'val-fp-min-dist', 'fp_min_dist');
+        syncInput('slider-fp-border-distance', 'fp-border-distance', 'val-fp-border-distance', 'fp_border_distance');
+        syncInput('slider-fp-orientation', 'fp-orientation', 'val-fp-orientation', 'fp_orientation', true);
+        syncInput('slider-fp-speed', 'fp-speed', 'val-fp-speed', 'fp_speed');
+        syncInput('slider-fp-height', 'fp-height', 'val-fp-height', 'fp_height');
 
-        document.getElementById('fp-mode').addEventListener('change', () => {
+        document.getElementById('fp-mode').addEventListener('change', (e) => {
+            updateActiveFieldParam('fp_mode', e.target.value);
             this.generateFlightPlan();
         });
 
-        document.getElementById('fp-clip-corners').addEventListener('change', () => {
+        document.getElementById('fp-clip-corners').addEventListener('change', (e) => {
+            updateActiveFieldParam('fp_clip_corners', e.target.checked ? 1 : 0);
             this.generateFlightPlan();
         });
 
-        this.terrainFollowingCheckbox.addEventListener('change', () => {
+        this.terrainFollowingCheckbox.addEventListener('change', (e) => {
             const heightModeContainer = document.getElementById('fp-height-mode-container');
-            if (this.terrainFollowingCheckbox.checked) {
+            const checked = e.target.checked;
+            updateActiveFieldParam('fp_terrain_following', checked ? 1 : 0);
+
+            if (checked) {
                 heightModeContainer.classList.remove('hidden');
                 this.showWPHeightCheckbox.disabled = false;
                 this.showWPHeightCheckbox.checked = true;
+                updateActiveFieldParam('fp_show_wp_height', 1);
             } else {
                 heightModeContainer.classList.add('hidden');
                 this.showWPHeightCheckbox.disabled = true;
                 this.showWPHeightCheckbox.checked = false;
+                updateActiveFieldParam('fp_show_wp_height', 0);
             }
             this.scheduleFPUpdate();
         });
 
-        this.showWPHeightCheckbox.addEventListener('change', () => {
+        this.showWPHeightCheckbox.addEventListener('change', (e) => {
+            updateActiveFieldParam('fp_show_wp_height', e.target.checked ? 1 : 0);
             this.updateWaypointMarkers();
         });
 
@@ -272,6 +338,27 @@ class App {
             } else {
                 if (this.currentFlightPath.editing) this.currentFlightPath.editing.disable();
             }
+        });
+
+        const simpleDropdowns = [
+            ['fp-height-mode', 'fp_height_mode'],
+            ['fp-drone-info', 'fp_drone_info'],
+            ['fp-finish-action', 'fp_finish_action'],
+            ['fp-rc-lost-action', 'fp_rc_lost_action'],
+            ['fp-execute-rc-lost-action', 'fp_execute_rc_lost_action'],
+            ['fp-fly-to-wayline-mode', 'fp_fly_to_wayline_mode'],
+            ['fp-waypoint-turn-mode', 'fp_waypoint_turn_mode'],
+            ['fp-waypoint-heading-mode', 'fp_waypoint_heading_mode']
+        ];
+
+        simpleDropdowns.forEach(([id, param]) => {
+            document.getElementById(id).addEventListener('change', (e) => {
+                updateActiveFieldParam(param, e.target.value);
+            });
+        });
+
+        document.getElementById('fp-takeoff-security-height').addEventListener('change', (e) => {
+            updateActiveFieldParam('fp_takeoff_security_height', e.target.value);
         });
 
         document.getElementById('fp-rc-lost-action').addEventListener('change', (e) => {
@@ -382,12 +469,22 @@ class App {
 
     openFlightPlanSidebar(id) {
         const prevId = document.getElementById('fp-field-id').value;
+        const field = this.fields.find(f => String(f.id) === String(id));
+        if (!field) return;
+
         document.getElementById('fp-field-id').value = id;
         this.fpSidebar.classList.remove('hidden');
+        this.fpSidebar.classList.remove('collapsed');
+        document.getElementById('right-resizer').classList.remove('hidden');
         this.mapManager.map.invalidateSize();
         this.zoomToField(id);
 
         if (prevId !== id) {
+            // Load saved parameters into UI if they exist
+            if (field.fp_path_distance !== undefined && field.fp_path_distance !== null) {
+                this.loadFPParametersIntoUI(field);
+            }
+
             // Reset stats and export button for new field
             document.getElementById('fp-stats').classList.add('hidden');
             this.btnExportFPKML.classList.add('hidden');
@@ -1325,6 +1422,7 @@ class App {
         if (field) {
             const newName = prompt('Neuen Schlagnamen eingeben:', field.name);
             if (newName) {
+                this.saveHistory();
                 field.name = newName;
                 this.updateFieldList();
             }
@@ -1335,6 +1433,7 @@ class App {
         if (!confirm('Sind Sie sicher, dass Sie diesen Schlag löschen möchten?')) return;
         const field = this.fields.find(f => String(f.id) === String(id));
         if (field) {
+            this.saveHistory();
             const layer = this.mapManager.drawnItems.getLayer(id);
             if (layer) {
                 const currentFpId = document.getElementById('fp-field-id').value;
@@ -1350,6 +1449,57 @@ class App {
                 this.mapManager.drawnItems.removeLayer(layer);
                 this.fields = this.fields.filter(f => String(f.id) !== String(id));
                 this.updateFieldList();
+            }
+        }
+    }
+
+    saveHistory() {
+        // Store current fields state
+        const state = JSON.stringify(this.fields);
+        this.history.push(state);
+        if (this.history.length > 20) this.history.shift(); // Max 20 undo steps
+        document.getElementById('btn-undo').disabled = false;
+    }
+
+    undo() {
+        if (this.history.length === 0) return;
+
+        const currentFpId = document.getElementById('fp-field-id').value;
+        let activeFieldName = null;
+        if (currentFpId) {
+            const activeField = this.fields.find(f => String(f.id) === String(currentFpId));
+            if (activeField) activeFieldName = activeField.name;
+        }
+
+        const lastState = JSON.parse(this.history.pop());
+        this.fields = lastState;
+
+        // Sync map
+        this.mapManager.drawnItems.clearLayers();
+        this.fields.forEach(field => {
+            const layer = L.geoJSON(JSON.parse(field.geometry), {
+                style: { color: '#3388ff', weight: 3, opacity: 0.5 }
+            });
+            layer.eachLayer(l => {
+                this.mapManager.drawnItems.addLayer(l);
+                field.id = L.stamp(l); // Update ID to match new layer
+            });
+        });
+
+        this.updateFieldList();
+        if (this.history.length === 0) {
+            document.getElementById('btn-undo').disabled = true;
+        }
+
+        // Try to restore FP sidebar if active field still exists
+        if (activeFieldName) {
+            const restoredField = this.fields.find(f => f.name === activeFieldName);
+            if (restoredField) {
+                document.getElementById('fp-field-id').value = restoredField.id;
+                // Re-generate flight plan for the restored field state
+                this.generateFlightPlan();
+            } else {
+                this.closeFPSidebar.click();
             }
         }
     }
@@ -1457,12 +1607,248 @@ class App {
         });
     }
 
+    async refreshCustomerList() {
+        try {
+            const response = await fetch('../api/get_customers.php');
+            const result = await response.json();
+            if (result.success) {
+                const select = document.getElementById('customer-select');
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">-- Kunde wählen --</option>';
+                result.customers.forEach(c => {
+                    const option = document.createElement('option');
+                    option.value = c.id;
+                    option.textContent = `${c.name}, ${c.first_name} ${c.company ? '(' + c.company + ')' : ''}`;
+                    select.appendChild(option);
+                });
+                select.value = currentValue;
+            }
+        } catch (err) {
+            console.error('Failed to refresh customer list', err);
+        }
+    }
+
+    async loadCustomerData(id) {
+        try {
+            const response = await fetch(`../api/get_customer_data.php?id=${id}`);
+            const result = await response.json();
+            if (result.success) {
+                this.currentCustomerId = id;
+                const c = result.customer;
+
+                // Populate Step 1
+                document.getElementById('first_name').value = c.first_name;
+                document.getElementById('name').value = c.name;
+                document.getElementById('company').value = c.company;
+                document.getElementById('street').value = c.street;
+                document.getElementById('house_number').value = c.house_number;
+                document.getElementById('postal_code').value = c.postal_code;
+                document.getElementById('city').value = c.city;
+                document.getElementById('email').value = c.email;
+                document.getElementById('phone').value = c.phone;
+                document.getElementById('comments').value = c.comments;
+                document.getElementById('dsgvo').checked = c.dsgvo_accepted == 1;
+
+                // Load Fields
+                this.mapManager.drawnItems.clearLayers();
+                this.fields = [];
+                result.fields.forEach(f => {
+                    const geoJson = JSON.parse(f.geometry);
+                    this.mapManager.addFieldToMap({
+                        type: 'Feature',
+                        geometry: geoJson,
+                        properties: { name: f.name }
+                    }, f.name);
+                });
+
+                this.updateFieldList();
+
+                // Hydrate fields with saved FP parameters if they exist
+                result.fields.forEach(f => {
+                    const fieldInApp = this.fields.find(fApp => fApp.name === f.name);
+                    if (fieldInApp) {
+                        fieldInApp.fp_path_distance = f.fp_path_distance;
+                        fieldInApp.fp_border_distance = f.fp_border_distance;
+                        fieldInApp.fp_min_dist = f.fp_min_dist;
+                        fieldInApp.fp_orientation = f.fp_orientation;
+                        fieldInApp.fp_speed = f.fp_speed;
+                        fieldInApp.fp_height = f.fp_height;
+                        fieldInApp.fp_mode = f.fp_mode;
+                        fieldInApp.fp_clip_corners = f.fp_clip_corners;
+                        fieldInApp.fp_terrain_following = f.fp_terrain_following;
+                        fieldInApp.fp_show_wp_height = f.fp_show_wp_height;
+                        fieldInApp.fp_height_mode = f.fp_height_mode;
+                        fieldInApp.fp_drone_info = f.fp_drone_info;
+                        fieldInApp.fp_finish_action = f.fp_finish_action;
+                        fieldInApp.fp_rc_lost_action = f.fp_rc_lost_action;
+                        fieldInApp.fp_execute_rc_lost_action = f.fp_execute_rc_lost_action;
+                        fieldInApp.fp_fly_to_wayline_mode = f.fp_fly_to_wayline_mode;
+                        fieldInApp.fp_takeoff_security_height = f.fp_takeoff_security_height;
+                        fieldInApp.fp_waypoint_turn_mode = f.fp_waypoint_turn_mode;
+                        fieldInApp.fp_waypoint_heading_mode = f.fp_waypoint_heading_mode;
+                    }
+                });
+
+                alert(`Daten von ${c.name} geladen.`);
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Fehler beim Laden der Kundendaten.');
+        }
+    }
+
+    async deleteCustomer(id) {
+        if (!confirm('Möchten Sie diesen Kunden und alle seine Schläge wirklich löschen?')) return;
+        try {
+            const response = await fetch('../api/delete_customer.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            });
+            const result = await response.json();
+            if (result.success) {
+                if (this.currentCustomerId == id) {
+                    this.resetToNewCustomer();
+                }
+                this.refreshCustomerList();
+                alert('Kunde gelöscht.');
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    resetToNewCustomer() {
+        this.currentCustomerId = null;
+        document.getElementById('customer-form').reset();
+        this.mapManager.drawnItems.clearLayers();
+        this.fields = [];
+        this.updateFieldList();
+        document.getElementById('customer-select').value = "";
+    }
+
+    initSidebarLogic() {
+        const leftSidebar = document.getElementById('left-sidebar');
+        const rightSidebar = document.getElementById('flightplan-sidebar');
+        const leftResizer = document.getElementById('left-resizer');
+        const rightResizer = document.getElementById('right-resizer');
+        const toggleLeft = document.getElementById('toggle-left-sidebar');
+        const toggleRight = document.getElementById('toggle-right-sidebar');
+
+        // Restore state from sessionStorage
+        if (sessionStorage.getItem('leftSidebarCollapsed') === 'true') {
+            leftSidebar.classList.add('collapsed');
+            leftResizer.classList.add('hidden');
+        }
+        if (sessionStorage.getItem('rightSidebarCollapsed') === 'true' && !rightSidebar.classList.contains('hidden')) {
+            rightSidebar.classList.add('collapsed');
+            rightResizer.classList.add('hidden');
+        }
+
+        // Toggles
+        toggleLeft.addEventListener('click', (e) => {
+            e.stopPropagation();
+            leftSidebar.classList.toggle('collapsed');
+            const collapsed = leftSidebar.classList.contains('collapsed');
+            leftResizer.classList.toggle('hidden', collapsed);
+            sessionStorage.setItem('leftSidebarCollapsed', collapsed);
+            setTimeout(() => this.mapManager.map.invalidateSize(), 300);
+        });
+
+        toggleRight.addEventListener('click', (e) => {
+            e.stopPropagation();
+            rightSidebar.classList.toggle('collapsed');
+            const collapsed = rightSidebar.classList.contains('collapsed');
+            rightResizer.classList.toggle('hidden', collapsed);
+            sessionStorage.setItem('rightSidebarCollapsed', collapsed);
+            setTimeout(() => this.mapManager.map.invalidateSize(), 300);
+        });
+
+        // Resizing
+        const initResizer = (resizer, sidebar, side) => {
+            let x = 0;
+            let w = 0;
+
+            const mouseDownHandler = (e) => {
+                x = e.clientX;
+                const styles = window.getComputedStyle(sidebar);
+                w = parseInt(styles.width, 10);
+                document.addEventListener('mousemove', mouseMoveHandler);
+                document.addEventListener('mouseup', mouseUpHandler);
+                resizer.classList.add('resizing');
+            };
+
+            const mouseMoveHandler = (e) => {
+                const dx = e.clientX - x;
+                const newWidth = side === 'left' ? w + dx : w - dx;
+                if (newWidth > 100 && newWidth < 600) {
+                    sidebar.style.width = `${newWidth}px`;
+                    this.mapManager.map.invalidateSize();
+                }
+            };
+
+            const mouseUpHandler = () => {
+                document.removeEventListener('mousemove', mouseMoveHandler);
+                document.removeEventListener('mouseup', mouseUpHandler);
+                resizer.classList.remove('resizing');
+            };
+
+            resizer.addEventListener('mousedown', mouseDownHandler);
+        };
+
+        initResizer(leftResizer, leftSidebar, 'left');
+        initResizer(rightResizer, rightSidebar, 'right');
+    }
+
+    loadFPParametersIntoUI(field) {
+        const setVal = (sliderId, inputId, valSpanId, val, isOrientation = false) => {
+            const slider = document.getElementById(sliderId);
+            const input = document.getElementById(inputId);
+            const valSpan = document.getElementById(valSpanId);
+
+            if (slider) slider.value = val;
+            if (input) input.value = isOrientation && (val == 0 || val === "" || val === null) ? "" : val;
+            if (valSpan) {
+                if (isOrientation && (val == 0 || val === "" || val === null)) valSpan.textContent = "Auto";
+                else valSpan.textContent = val;
+            }
+        };
+
+        setVal('slider-fp-path-distance', 'fp-path-distance', 'val-fp-path-distance', field.fp_path_distance);
+        setVal('slider-fp-border-distance', 'fp-border-distance', 'val-fp-border-distance', field.fp_border_distance);
+        setVal('slider-fp-min-dist', 'fp-min-dist', 'val-fp-min-dist', field.fp_min_dist);
+        setVal('slider-fp-orientation', 'fp-orientation', 'val-fp-orientation', field.fp_orientation, true);
+        setVal('slider-fp-speed', 'fp-speed', 'val-fp-speed', field.fp_speed);
+        setVal('slider-fp-height', 'fp-height', 'val-fp-height', field.fp_height);
+
+        document.getElementById('fp-mode').value = field.fp_mode || 'zigzag';
+        document.getElementById('fp-clip-corners').checked = field.fp_clip_corners == 1;
+        document.getElementById('fp-terrain-following').checked = field.fp_terrain_following == 1;
+        document.getElementById('fp-show-wp-height').checked = field.fp_show_wp_height == 1;
+        document.getElementById('fp-height-mode').value = field.fp_height_mode || 'relativeToStartPoint';
+        document.getElementById('fp-drone-info').value = field.fp_drone_info || '60';
+        document.getElementById('fp-finish-action').value = field.fp_finish_action || 'goHome';
+        document.getElementById('fp-rc-lost-action').value = field.fp_rc_lost_action || 'executeLostAction';
+        document.getElementById('fp-execute-rc-lost-action').value = field.fp_execute_rc_lost_action || 'goBack';
+        document.getElementById('fp-fly-to-wayline-mode').value = field.fp_fly_to_wayline_mode || 'safely';
+        document.getElementById('fp-takeoff-security-height').value = field.fp_takeoff_security_height || '2';
+        document.getElementById('fp-waypoint-turn-mode').value = field.fp_waypoint_turn_mode || 'coordinateTurn';
+        document.getElementById('fp-waypoint-heading-mode').value = field.fp_waypoint_heading_mode || 'followWayline';
+
+        // Trigger UI updates
+        this.terrainFollowingCheckbox.dispatchEvent(new Event('change'));
+        document.getElementById('fp-rc-lost-action').dispatchEvent(new Event('change'));
+    }
+
     async submitApplication() {
         if (this.fields.length === 0) {
             if (!confirm('Keine Schläge hinzugefügt. Trotzdem absenden?')) return;
         }
 
         const formData = new FormData();
+        if (this.currentCustomerId) {
+            formData.append('customer_id', this.currentCustomerId);
+        }
         formData.append('customer_first_name', document.getElementById('first_name').value);
         formData.append('customer_name', document.getElementById('name').value);
         formData.append('customer_company', document.getElementById('company').value);
@@ -1479,6 +1865,27 @@ class App {
             formData.append(`fields[${index}][name]`, field.name);
             formData.append(`fields[${index}][geometry]`, field.geometry);
             formData.append(`fields[${index}][area]`, field.area);
+
+            // Add FP parameters from the field object
+            formData.append(`fields[${index}][fp_path_distance]`, field.fp_path_distance ?? 10);
+            formData.append(`fields[${index}][fp_border_distance]`, field.fp_border_distance ?? 5);
+            formData.append(`fields[${index}][fp_min_dist]`, field.fp_min_dist ?? 5);
+            formData.append(`fields[${index}][fp_orientation]`, field.fp_orientation ?? 0);
+            formData.append(`fields[${index}][fp_speed]`, field.fp_speed ?? 10);
+            formData.append(`fields[${index}][fp_height]`, field.fp_height ?? 15);
+            formData.append(`fields[${index}][fp_mode]`, field.fp_mode ?? 'zigzag');
+            formData.append(`fields[${index}][fp_clip_corners]`, field.fp_clip_corners ?? 1);
+            formData.append(`fields[${index}][fp_terrain_following]`, field.fp_terrain_following ?? 0);
+            formData.append(`fields[${index}][fp_show_wp_height]`, field.fp_show_wp_height ?? 0);
+            formData.append(`fields[${index}][fp_height_mode]`, field.fp_height_mode ?? 'relativeToStartPoint');
+            formData.append(`fields[${index}][fp_drone_info]`, field.fp_drone_info ?? '60');
+            formData.append(`fields[${index}][fp_finish_action]`, field.fp_finish_action ?? 'goHome');
+            formData.append(`fields[${index}][fp_rc_lost_action]`, field.fp_rc_lost_action ?? 'executeLostAction');
+            formData.append(`fields[${index}][fp_execute_rc_lost_action]`, field.fp_execute_rc_lost_action ?? 'goBack');
+            formData.append(`fields[${index}][fp_fly_to_wayline_mode]`, field.fp_fly_to_wayline_mode ?? 'safely');
+            formData.append(`fields[${index}][fp_takeoff_security_height]`, field.fp_takeoff_security_height ?? 2);
+            formData.append(`fields[${index}][fp_waypoint_turn_mode]`, field.fp_waypoint_turn_mode ?? 'coordinateTurn');
+            formData.append(`fields[${index}][fp_waypoint_heading_mode]`, field.fp_waypoint_heading_mode ?? 'followWayline');
         });
 
         try {

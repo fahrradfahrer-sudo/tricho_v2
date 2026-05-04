@@ -29,9 +29,59 @@ try {
         name TEXT,
         geometry TEXT, -- JSON string of GeoJSON
         area REAL,
+        fp_path_distance REAL,
+        fp_border_distance REAL,
+        fp_min_dist REAL,
+        fp_orientation REAL,
+        fp_speed REAL,
+        fp_height REAL,
+        fp_mode TEXT,
+        fp_clip_corners INTEGER,
+        fp_terrain_following INTEGER,
+        fp_show_wp_height INTEGER,
+        fp_height_mode TEXT,
+        fp_drone_info TEXT,
+        fp_finish_action TEXT,
+        fp_rc_lost_action TEXT,
+        fp_execute_rc_lost_action TEXT,
+        fp_fly_to_wayline_mode TEXT,
+        fp_takeoff_security_height REAL,
+        fp_waypoint_turn_mode TEXT,
+        fp_waypoint_heading_mode TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
     )");
+
+    // Migration: Add columns if they don't exist
+    $columns = [
+        'fp_path_distance' => 'REAL',
+        'fp_border_distance' => 'REAL',
+        'fp_min_dist' => 'REAL',
+        'fp_orientation' => 'REAL',
+        'fp_speed' => 'REAL',
+        'fp_height' => 'REAL',
+        'fp_mode' => 'TEXT',
+        'fp_clip_corners' => 'INTEGER',
+        'fp_terrain_following' => 'INTEGER',
+        'fp_show_wp_height' => 'INTEGER',
+        'fp_height_mode' => 'TEXT',
+        'fp_drone_info' => 'TEXT',
+        'fp_finish_action' => 'TEXT',
+        'fp_rc_lost_action' => 'TEXT',
+        'fp_execute_rc_lost_action' => 'TEXT',
+        'fp_fly_to_wayline_mode' => 'TEXT',
+        'fp_takeoff_security_height' => 'REAL',
+        'fp_waypoint_turn_mode' => 'TEXT',
+        'fp_waypoint_heading_mode' => 'TEXT'
+    ];
+
+    foreach ($columns as $col => $type) {
+        try {
+            $db->exec("ALTER TABLE fields ADD COLUMN $col $type");
+        } catch (PDOException $e) {
+            // Column might already exist
+        }
+    }
 
 } catch (PDOException $e) {
     die("Database connection failed: " . $e->getMessage());
