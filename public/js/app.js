@@ -515,12 +515,9 @@ class App {
         }
     }
 
-    getMiteredOffset(poly, distance, clip) {
+    getMiteredOffset(poly, distance, clip, originalBoundary = null) {
         if (distance <= 0) return poly;
 
-        // Use turf.rewind to ensure consistent winding order:
-        // Outer ring: Counter-Clockwise (CCW)
-        // Holes: Clockwise (CW)
         const rewound = turf.rewind(poly);
         const geom = rewound.geometry || rewound;
 
@@ -534,38 +531,43 @@ class App {
                 const pCurr = ring[i];
                 const pNext = ring[i + 1];
 
-                const b1 = turf.bearing(pPrev, pCurr);
-                const b2 = turf.bearing(pCurr, pNext);
+                const isPrevShared = originalBoundary ? this.isSharedEdge(pPrev, pCurr, originalBoundary) : false;
+                const isNextShared = originalBoundary ? this.isSharedEdge(pCurr, pNext, originalBoundary) : false;
 
-                // Normal direction (90 degrees to the left of the segment)
-                // For CCW outer ring, this points INWARD.
-                // For CW inner ring (hole), this points OUTWARD (into the field).
-                let n1 = b1 - 90;
-                let n2 = b2 - 90;
-
-                let diff = n2 - n1;
-                while (diff > 180) diff -= 360;
-                while (diff < -180) diff += 360;
-
-                const bisector = n1 + diff / 2;
-                const phi = (diff / 2) * Math.PI / 180;
-                const cosPhi = Math.cos(phi);
-
-                let miterDist = distance;
-                const miterLimit = 2.5;
-
-                if (Math.abs(cosPhi) > 0.01) {
-                    miterDist = distance / cosPhi;
+                if (isPrevShared && isNextShared) {
+                    newRing.push(pCurr);
+                    continue;
                 }
 
-                if (clip && Math.abs(miterDist) > Math.abs(distance) * miterLimit) {
-                    const cp1 = turf.destination(turf.point(pCurr), distance, n1, {units:'meters'});
-                    const cp2 = turf.destination(turf.point(pCurr), distance, n2, {units:'meters'});
-                    newRing.push(cp1.geometry.coordinates);
-                    newRing.push(cp2.geometry.coordinates);
+                const b1 = turf.bearing(pPrev, pCurr);
+                const b2 = turf.bearing(pCurr, pNext);
+                const n1 = b1 - 90;
+                const n2 = b2 - 90;
+
+                const d1 = isPrevShared ? 0 : distance;
+                const d2 = isNextShared ? 0 : distance;
+
+                const pPrevOffset = turf.destination(turf.point(pPrev), d1, n1, {units: 'meters'});
+                const pCurrOffset1 = turf.destination(turf.point(pCurr), d1, n1, {units: 'meters'});
+                const pCurrOffset2 = turf.destination(turf.point(pCurr), d2, n2, {units: 'meters'});
+                const pNextOffset = turf.destination(turf.point(pNext), d2, n2, {units: 'meters'});
+
+                const intersect = this.intersectLines(
+                    pPrevOffset.geometry.coordinates, pCurrOffset1.geometry.coordinates,
+                    pCurrOffset2.geometry.coordinates, pNextOffset.geometry.coordinates
+                );
+
+                if (intersect) {
+                    const distToOrig = turf.distance(turf.point(pCurr), turf.point(intersect), {units: 'meters'});
+                    if (clip && distToOrig > distance * 2.5) {
+                        if (d1 > 0) newRing.push(pCurrOffset1.geometry.coordinates);
+                        if (d2 > 0) newRing.push(pCurrOffset2.geometry.coordinates);
+                        if (d1 === 0 && d2 === 0) newRing.push(pCurr);
+                    } else {
+                        newRing.push(intersect);
+                    }
                 } else {
-                    const newPt = turf.destination(turf.point(pCurr), miterDist, bisector, {units: 'meters'}).geometry.coordinates;
-                    newRing.push(newPt);
+                    newRing.push(pCurr);
                 }
             }
             if (newRing.length < 3) return null;
@@ -704,7 +706,15 @@ class App {
         virtualBorder = this.simplifyGeo(virtualBorder, 0.1);
         let pathPoints = [];
 
-        if (fpMode === 'curved') {
+        if (fpMode === 'smart') {
+            const result = this.calculateSmartPath(virtualBorder, pathDistance, minPointDist, originalPoly);
+            pathPoints = result.points;
+            if (result.orientation !== undefined) {
+                document.getElementById('val-fp-orientation').textContent = Math.round(result.orientation);
+            } else {
+                document.getElementById('val-fp-orientation').textContent = "Smart";
+            }
+        } else if (fpMode === 'curved') {
             // Keep existing curved logic but use the new virtual border
             let currentBufferDist = 0;
             let direction = 1;
@@ -767,17 +777,11 @@ class App {
                 finalOrientation = parseFloat(orientation);
                 pathPoints = this.calculateZigzagPoints(virtualBorder, finalOrientation, pathDistance);
                 pathPoints = this.simplifyPath(pathPoints, minPointDist, virtualBorder);
-            } else if (fpMode === 'intelligent') {
+            } else {
+                // Intelligent logic used for both 'intelligent' and 'zigzag' (if orientation is Auto)
                 const result = this.calculateIntelligentPath(virtualBorder, pathDistance, minPointDist);
                 pathPoints = result.points;
                 finalOrientation = result.orientation;
-                // orientation for display/stats
-                document.getElementById('val-fp-orientation').textContent = Math.round(finalOrientation);
-            } else {
-                // Default Zigzag (Auto)
-                finalOrientation = this.calculateOptimalOrientation(virtualBorder);
-                pathPoints = this.calculateZigzagPoints(virtualBorder, finalOrientation, pathDistance);
-                pathPoints = this.simplifyPath(pathPoints, minPointDist, virtualBorder);
                 document.getElementById('val-fp-orientation').textContent = Math.round(finalOrientation);
             }
 
@@ -1095,6 +1099,23 @@ class App {
         return unrotatedPath.geometry.coordinates;
     }
 
+    intersectLines(p1, p2, p3, p4) {
+        const x1 = p1[0], y1 = p1[1], x2 = p2[0], y2 = p2[1];
+        const x3 = p3[0], y3 = p3[1], x4 = p4[0], y4 = p4[1];
+        const den = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+        if (den === 0) return null;
+        const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / den;
+        return [x1 + ua * (x2 - x1), y1 + ua * (y2 - y1)];
+    }
+
+    isSharedEdge(p1, p2, originalBoundary) {
+        if (!originalBoundary) return false;
+        const mid = turf.midpoint(p1, p2);
+        const nearest = turf.nearestPointOnLine(originalBoundary, mid, { units: 'meters' });
+        const dist = turf.distance(mid, nearest, { units: 'meters' });
+        return dist > 0.1;
+    }
+
     calculateIntelligentPath(virtualBorder, pathDistance, minPointDist) {
         let results = [];
         let minDistance = Infinity;
@@ -1152,6 +1173,127 @@ class App {
             }
         }
         return bestAngle;
+    }
+
+    calculateSmartPath(virtualBorder, pathDistance, minPointDist, originalPoly) {
+        const parts = this.decomposePolygon(originalPoly);
+        if (parts.length <= 1) {
+            return this.calculateIntelligentPath(virtualBorder, pathDistance, minPointDist);
+        }
+
+        let allPoints = [];
+        const borderDistance = parseFloat(document.getElementById('fp-border-distance').value) || 5;
+        const clipCorners = document.getElementById('fp-clip-corners').checked;
+
+        const originalBoundary = turf.polygonToLine(originalPoly);
+        parts.forEach((part, idx) => {
+            let partVirtualBorder = this.getMiteredOffset(part, borderDistance, clipCorners, originalBoundary);
+            if (!partVirtualBorder) return;
+
+            try {
+                partVirtualBorder = turf.intersect(partVirtualBorder, part);
+            } catch (e) {
+                console.warn("Part intersection failed", e);
+            }
+
+            if (!partVirtualBorder || (partVirtualBorder.type === 'FeatureCollection' && partVirtualBorder.features.length === 0)) return;
+
+            partVirtualBorder = this.simplifyGeo(partVirtualBorder, 0.1);
+            const result = this.calculateIntelligentPath(partVirtualBorder, pathDistance, minPointDist);
+
+            if (result.points.length > 0) {
+                if (allPoints.length > 0) {
+                    const lastPt = allPoints[allPoints.length - 1];
+                    const firstPt = result.points[0];
+                    const connection = this.getBorderPath(lastPt, firstPt, originalPoly);
+                    connection.forEach(p => {
+                        if (turf.distance(allPoints[allPoints.length - 1], p, { units: 'meters' }) > 0.1) {
+                            allPoints.push(p);
+                        }
+                    });
+                }
+                result.points.forEach(p => {
+                    if (allPoints.length === 0 || turf.distance(allPoints[allPoints.length - 1], p, { units: 'meters' }) > 0.1) {
+                        allPoints.push(p);
+                    }
+                });
+            }
+        });
+
+        return { points: allPoints };
+    }
+
+    decomposePolygon(poly) {
+        let parts = [poly];
+        let found = true;
+        while (found) {
+            found = false;
+            for (let i = 0; i < parts.length; i++) {
+                const split = this.findBestSplit(parts[i]);
+                if (split) {
+                    parts.splice(i, 1, split[0], split[1]);
+                    found = true;
+                    break;
+                }
+            }
+        }
+        return parts;
+    }
+
+    findBestSplit(poly) {
+        const coords = poly.geometry.coordinates[0];
+        for (let i = 0; i < coords.length - 1; i++) {
+            const pPrev = i === 0 ? coords[coords.length - 2] : coords[i - 1];
+            const pCurr = coords[i];
+            const pNext = coords[i + 1];
+
+            const b1 = turf.bearing(pPrev, pCurr);
+            const b2 = turf.bearing(pCurr, pNext);
+            let diff = b2 - b1;
+            while (diff > 180) diff -= 360;
+            while (diff < -180) diff += 360;
+
+            if (diff > 10) { // Reflex vertex (concave corner)
+                // Try to split by extending one of the edges
+                const directions = [b1, b2 + 180];
+                for (const angle of directions) {
+                    const line = turf.lineString([
+                        pCurr,
+                        turf.destination(turf.point(pCurr), 10000, angle, { units: 'meters' }).geometry.coordinates
+                    ]);
+                    const intersects = turf.lineIntersect(line, turf.polygonToLine(poly));
+                    const sorted = intersects.features
+                        .filter(f => turf.distance(f, pCurr, { units: 'meters' }) > 0.1)
+                        .sort((a, b) => turf.distance(a, pCurr) - turf.distance(b, pCurr));
+
+                    if (sorted.length > 0) {
+                        const splitPt = sorted[0].geometry.coordinates;
+                        const splitLine = turf.lineString([pCurr, splitPt]);
+
+                        // Check if split line is inside
+                        const mid = turf.midpoint(pCurr, splitPt);
+                        if (turf.booleanPointInPolygon(mid, poly)) {
+                            try {
+                                const bufferedLine = turf.buffer(splitLine, 0.000001, { units: 'degrees' });
+                                const remaining = turf.difference(poly, bufferedLine);
+                                if (remaining && remaining.type === 'MultiPolygon') {
+                                    return [
+                                        turf.polygon(remaining.geometry.coordinates[0]),
+                                        turf.polygon(remaining.geometry.coordinates[1])
+                                    ];
+                                }
+                                if (remaining && remaining.type === 'FeatureCollection' && remaining.features.length >= 2) {
+                                    return [remaining.features[0], remaining.features[1]];
+                                }
+                            } catch (e) {
+                                console.warn("Split failed", e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     updateFPStats(speed) {
