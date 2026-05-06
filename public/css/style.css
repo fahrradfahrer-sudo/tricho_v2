@@ -155,10 +155,6 @@ hr {
     display: none;
 }
 
-.sidebar {
-    overflow: visible !important; /* Allow toggle button to be visible outside collapsed width */
-}
-
 .right-sidebar {
     border-right: none;
     border-left: 1px solid #ccc;
