@@ -1,5 +1,10 @@
 <?php
-$dbPath = __DIR__ . '/../data/app.sqlite';
+$dbDir = __DIR__ . '/../data';
+$dbPath = $dbDir . '/app.sqlite';
+
+if (!is_dir($dbDir)) {
+    mkdir($dbDir, 0777, true);
+}
 
 try {
     $db = new PDO("sqlite:$dbPath");
@@ -84,7 +89,13 @@ try {
     }
 
 } catch (PDOException $e) {
-    die("Database connection failed: " . $e->getMessage());
+    if (php_sapi_name() !== 'cli') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => "Database connection failed: " . $e->getMessage()]);
+        exit;
+    } else {
+        throw $e;
+    }
 }
 
 return $db;
