@@ -15,6 +15,7 @@ class App {
         this.fpSidebar = document.getElementById('flightplan-sidebar');
         this.closeFPSidebar = document.getElementById('close-fp-sidebar');
         this.btnGenerateFP = document.getElementById('btn-generate-fp');
+        this.btnManualSplit = document.getElementById('btn-manual-split');
         this.btnReverseFP = document.getElementById('btn-reverse-fp');
         this.btnExportFPKML = document.getElementById('btn-export-fp-kml');
         this.btnExportFPKMZ = document.getElementById('btn-export-fp-kmz');
@@ -30,6 +31,10 @@ class App {
         this.currentFlightPath = null;
         this.fpUpdateTimeout = null;
         this.currentCustomerId = null;
+        this.colors = ['red', 'blue', 'green', 'orange', 'purple', 'cyan'];
+        this.manualSplitMode = false;
+        this.manualSplitLine = null;
+        this.splitMarkers = [];
 
         this.initMap();
         this.attachEventListeners();
@@ -174,6 +179,10 @@ class App {
 
         this.btnReverseFP.addEventListener('click', () => {
             this.reverseFlightPlan();
+        });
+
+        this.btnManualSplit.addEventListener('click', () => {
+            this.toggleManualSplit();
         });
 
         this.searchPlzInput.addEventListener('keydown', (e) => {
@@ -615,16 +624,24 @@ class App {
         }
         this.waypointTableContainer.classList.remove('hidden');
         this.waypointTableBody.innerHTML = '';
-        const latlngs = this.currentFlightPath.getLatLngs();
+
+        let latlngs = [];
+        if (this.currentFlightPath instanceof L.FeatureGroup) {
+            this.currentFlightPath.eachLayer(l => {
+                latlngs = latlngs.concat(l.getLatLngs());
+            });
+        } else {
+            latlngs = this.currentFlightPath.getLatLngs();
+        }
 
         latlngs.forEach((ll, idx) => {
-            const absHeight = ll.alt !== undefined ? ll.alt.toFixed(1) : '-';
+            const absHeight = ll.alt !== undefined ? ll.alt.toFixed(1) : '';
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${idx + 1}</td>
-                <td><input type="number" step="0.000001" value="${ll.lat.toFixed(6)}" data-idx="${idx}" data-type="lat"></td>
-                <td><input type="number" step="0.000001" value="${ll.lng.toFixed(6)}" data-idx="${idx}" data-type="lng"></td>
-                <td><input type="number" step="0.1" value="${absHeight}" data-idx="${idx}" data-type="alt" ${this.terrainFollowingCheckbox.checked ? '' : 'disabled'}></td>
+                <td><input type="text" value="${ll.lat.toFixed(6)}" data-idx="${idx}" data-type="lat"></td>
+                <td><input type="text" value="${ll.lng.toFixed(6)}" data-idx="${idx}" data-type="lng"></td>
+                <td><input type="text" value="${absHeight}" data-idx="${idx}" data-type="alt" ${this.terrainFollowingCheckbox.checked ? '' : 'disabled'}></td>
                 <td><button type="button" class="btn secondary small action-delete-wp">Löschen</button></td>
             `;
             tr.querySelector('.action-delete-wp').addEventListener('click', () => this.removeWaypoint(idx));
@@ -636,12 +653,28 @@ class App {
                 const idx = parseInt(e.target.dataset.idx);
                 const type = e.target.dataset.type;
                 const val = parseFloat(e.target.value);
-                const currentLatLngs = this.currentFlightPath.getLatLngs();
-                if (type === 'lat') currentLatLngs[idx].lat = val;
-                else if (type === 'lng') currentLatLngs[idx].lng = val;
-                else if (type === 'alt') currentLatLngs[idx].alt = val;
+                if (isNaN(val)) return;
 
-                this.currentFlightPath.setLatLngs(currentLatLngs);
+                if (this.currentFlightPath instanceof L.FeatureGroup) {
+                    let count = 0;
+                    this.currentFlightPath.eachLayer(l => {
+                        const lls = l.getLatLngs();
+                        if (idx >= count && idx < count + lls.length) {
+                            const subIdx = idx - count;
+                            if (type === 'lat') lls[subIdx].lat = val;
+                            else if (type === 'lng') lls[subIdx].lng = val;
+                            else if (type === 'alt') lls[subIdx].alt = val;
+                            l.setLatLngs(lls);
+                        }
+                        count += lls.length;
+                    });
+                } else {
+                    const currentLatLngs = this.currentFlightPath.getLatLngs();
+                    if (type === 'lat') currentLatLngs[idx].lat = val;
+                    else if (type === 'lng') currentLatLngs[idx].lng = val;
+                    else if (type === 'alt') currentLatLngs[idx].alt = val;
+                    this.currentFlightPath.setLatLngs(currentLatLngs);
+                }
                 this.updateWaypointMarkers();
                 this.updateFPStats(parseFloat(document.getElementById('fp-speed').value) || 10);
             });
@@ -649,13 +682,29 @@ class App {
     }
 
     removeWaypoint(idx) {
-        const latlngs = this.currentFlightPath.getLatLngs();
-        if (latlngs.length <= 2) {
-            alert("Ein Flugplan muss mindestens 2 Punkte haben.");
-            return;
+        if (this.currentFlightPath instanceof L.FeatureGroup) {
+            let count = 0;
+            this.currentFlightPath.eachLayer(l => {
+                const lls = l.getLatLngs();
+                if (idx >= count && idx < count + lls.length) {
+                    if (lls.length <= 2) {
+                        alert("Ein Segment muss mindestens 2 Punkte haben.");
+                        return;
+                    }
+                    lls.splice(idx - count, 1);
+                    l.setLatLngs(lls);
+                }
+                count += lls.length;
+            });
+        } else {
+            const latlngs = this.currentFlightPath.getLatLngs();
+            if (latlngs.length <= 2) {
+                alert("Ein Flugplan muss mindestens 2 Punkte haben.");
+                return;
+            }
+            latlngs.splice(idx, 1);
+            this.currentFlightPath.setLatLngs(latlngs);
         }
-        latlngs.splice(idx, 1);
-        this.currentFlightPath.setLatLngs(latlngs);
         this.updateWaypointMarkers();
         this.updateWaypointTable();
         this.updateFPStats(parseFloat(document.getElementById('fp-speed').value) || 10);
@@ -709,7 +758,11 @@ class App {
         if (fpMode === 'smart') {
             const result = this.calculateSmartPath(virtualBorder, pathDistance, minPointDist, originalPoly);
             pathPoints = result.points;
-            if (result.orientation !== undefined) {
+            if (result.multiPath && result.multiPath.length > 1) pathPoints = result;
+
+            if (result.orientation === "Smart") {
+                document.getElementById('val-fp-orientation').textContent = "Smart";
+            } else if (result.orientation !== undefined) {
                 document.getElementById('val-fp-orientation').textContent = Math.round(result.orientation);
             } else {
                 document.getElementById('val-fp-orientation').textContent = "Smart";
@@ -820,7 +873,15 @@ class App {
             }
         }
 
-        this.currentFlightPath = L.polyline(latlngs, { color: 'red', weight: 3 });
+        if (fpMode === 'smart' && pathPoints.multiPath && pathPoints.multiPath.length > 1) {
+            const group = L.featureGroup();
+            pathPoints.multiPath.forEach(path => {
+                L.polyline(path.latlngs, { color: path.color, weight: 3 }).addTo(group);
+            });
+            this.currentFlightPath = group;
+        } else {
+            this.currentFlightPath = L.polyline(latlngs, { color: 'red', weight: 3 });
+        }
 
         this.updateWaypointMarkers();
         this.updateWaypointTable();
@@ -1176,12 +1237,22 @@ class App {
     }
 
     calculateSmartPath(virtualBorder, pathDistance, minPointDist, originalPoly) {
-        const parts = this.decomposePolygon(originalPoly);
+        let parts = [];
+        const fieldId = document.getElementById('fp-field-id').value;
+        const field = this.fields.find(f => String(f.id) === String(fieldId));
+
+        if (field && field.manualParts) {
+            parts = field.manualParts.map(p => turf.polygon(p.geometry.coordinates));
+        } else {
+            parts = this.decomposePolygon(originalPoly);
+        }
+
         if (parts.length <= 1) {
             return this.calculateIntelligentPath(virtualBorder, pathDistance, minPointDist);
         }
 
         let allPoints = [];
+        let multiPath = [];
         const borderDistance = parseFloat(document.getElementById('fp-border-distance').value) || 5;
         const clipCorners = document.getElementById('fp-clip-corners').checked;
 
@@ -1202,6 +1273,10 @@ class App {
             const result = this.calculateIntelligentPath(partVirtualBorder, pathDistance, minPointDist);
 
             if (result.points.length > 0) {
+                const partColor = this.colors[idx % this.colors.length];
+                const partLatLngs = result.points.map(p => L.latLng(p[1], p[0]));
+                multiPath.push({ latlngs: partLatLngs, color: partColor });
+
                 if (allPoints.length > 0) {
                     const lastPt = allPoints[allPoints.length - 1];
                     const firstPt = result.points[0];
@@ -1220,28 +1295,25 @@ class App {
             }
         });
 
-        return { points: allPoints };
+        return { points: allPoints, multiPath: multiPath, orientation: "Smart" };
     }
 
-    decomposePolygon(poly) {
-        let parts = [poly];
-        let found = true;
-        while (found) {
-            found = false;
-            for (let i = 0; i < parts.length; i++) {
-                const split = this.findBestSplit(parts[i]);
-                if (split) {
-                    parts.splice(i, 1, split[0], split[1]);
-                    found = true;
-                    break;
-                }
-            }
+    decomposePolygon(poly, depth = 0) {
+        if (depth > 5) return [poly];
+        const split = this.findBestSplit(poly);
+        if (split) {
+            return [
+                ...this.decomposePolygon(split[0], depth + 1),
+                ...this.decomposePolygon(split[1], depth + 1)
+            ];
         }
-        return parts;
+        return [poly];
     }
 
     findBestSplit(poly) {
         const coords = poly.geometry.coordinates[0];
+        const boundary = turf.polygonToLine(poly);
+
         for (let i = 0; i < coords.length - 1; i++) {
             const pPrev = i === 0 ? coords[coords.length - 2] : coords[i - 1];
             const pCurr = coords[i];
@@ -1253,41 +1325,65 @@ class App {
             while (diff > 180) diff -= 360;
             while (diff < -180) diff += 360;
 
-            if (diff > 10) { // Reflex vertex (concave corner)
-                // Try to split by extending one of the edges
+            if (diff > 15) { // Reflex vertex (concave corner) in CCW polygon
+                // Try splitting by connecting to other vertices
+                for (let j = 0; j < coords.length - 1; j++) {
+                    if (Math.abs(i - j) <= 1 || (i === 0 && j === coords.length - 2) || (j === 0 && i === coords.length - 2)) continue;
+
+                    const pTarget = coords[j];
+                    const splitLine = turf.lineString([pCurr, pTarget]);
+
+                    // Split line must be entirely inside
+                    if (this.isPathInside(pCurr, pTarget, poly, 0.5)) {
+                        try {
+                            const bufferedLine = turf.buffer(splitLine, 0.1, { units: 'meters' });
+                            const remaining = turf.difference(poly, bufferedLine);
+
+                            let parts = [];
+                            if (remaining) {
+                                if (remaining.geometry && remaining.geometry.type === 'MultiPolygon') {
+                                    parts = remaining.geometry.coordinates.map(c => turf.polygon(c));
+                                } else if (remaining.type === 'FeatureCollection') {
+                                    parts = remaining.features.filter(f => f.geometry.type === 'Polygon');
+                                }
+                            }
+
+                            if (parts.length >= 2) return parts;
+                        } catch (e) {}
+                    }
+                }
+
+                // Fallback: Try extending edges
                 const directions = [b1, b2 + 180];
                 for (const angle of directions) {
                     const line = turf.lineString([
                         pCurr,
-                        turf.destination(turf.point(pCurr), 10000, angle, { units: 'meters' }).geometry.coordinates
+                        turf.destination(turf.point(pCurr), 2, angle, { units: 'kilometers' }).geometry.coordinates
                     ]);
-                    const intersects = turf.lineIntersect(line, turf.polygonToLine(poly));
+                    const intersects = turf.lineIntersect(line, boundary);
                     const sorted = intersects.features
-                        .filter(f => turf.distance(f, pCurr, { units: 'meters' }) > 0.1)
+                        .filter(f => turf.distance(f, pCurr, { units: 'meters' }) > 1)
                         .sort((a, b) => turf.distance(a, pCurr) - turf.distance(b, pCurr));
 
                     if (sorted.length > 0) {
                         const splitPt = sorted[0].geometry.coordinates;
-                        const splitLine = turf.lineString([pCurr, splitPt]);
-
-                        // Check if split line is inside
-                        const mid = turf.midpoint(pCurr, splitPt);
-                        if (turf.booleanPointInPolygon(mid, poly)) {
+                        if (this.isPathInside(pCurr, splitPt, poly, 0.5)) {
                             try {
-                                const bufferedLine = turf.buffer(splitLine, 0.000001, { units: 'degrees' });
+                                const splitLine = turf.lineString([pCurr, splitPt]);
+                                const bufferedLine = turf.buffer(splitLine, 0.1, { units: 'meters' });
                                 const remaining = turf.difference(poly, bufferedLine);
-                                if (remaining && remaining.type === 'MultiPolygon') {
-                                    return [
-                                        turf.polygon(remaining.geometry.coordinates[0]),
-                                        turf.polygon(remaining.geometry.coordinates[1])
-                                    ];
+
+                                let parts = [];
+                                if (remaining) {
+                                    if (remaining.geometry && remaining.geometry.type === 'MultiPolygon') {
+                                        parts = remaining.geometry.coordinates.map(c => turf.polygon(c));
+                                    } else if (remaining.type === 'FeatureCollection') {
+                                        parts = remaining.features.filter(f => f.geometry.type === 'Polygon');
+                                    }
                                 }
-                                if (remaining && remaining.type === 'FeatureCollection' && remaining.features.length >= 2) {
-                                    return [remaining.features[0], remaining.features[1]];
-                                }
-                            } catch (e) {
-                                console.warn("Split failed", e);
-                            }
+
+                                if (parts.length >= 2) return parts;
+                            } catch (e) {}
                         }
                     }
                 }
@@ -2045,6 +2141,96 @@ class App {
         } catch (err) {
             console.error(err);
             alert('Beim Absenden ist ein Fehler aufgetreten.');
+        }
+    }
+
+    toggleManualSplit() {
+        this.manualSplitMode = !this.manualSplitMode;
+        if (this.manualSplitMode) {
+            this.btnManualSplit.classList.add('success');
+            this.btnManualSplit.textContent = 'Fertig';
+            this.mapManager.map.on('click', this.onMapSplitClick, this);
+            // Disable other interactions if needed
+        } else {
+            this.btnManualSplit.classList.remove('success');
+            this.btnManualSplit.textContent = 'Teilung manuell';
+            this.mapManager.map.off('click', this.onMapSplitClick, this);
+
+            if (this.splitMarkers.length === 2) {
+                this.performManualSplit();
+            }
+
+            this.splitMarkers.forEach(m => this.mapManager.map.removeLayer(m));
+            this.splitMarkers = [];
+            if (this.manualSplitLine) {
+                this.mapManager.map.removeLayer(this.manualSplitLine);
+                this.manualSplitLine = null;
+            }
+        }
+    }
+
+    onMapSplitClick(e) {
+        if (this.splitMarkers.length >= 2) return;
+
+        const marker = L.marker(e.latlng, { draggable: true }).addTo(this.mapManager.map);
+        marker.on('drag', () => this.updateManualSplitLine());
+        this.splitMarkers.push(marker);
+
+        this.updateManualSplitLine();
+
+        if (this.splitMarkers.length === 2) {
+            // Automatically finalize split after two markers
+            setTimeout(() => this.toggleManualSplit(), 200);
+        }
+    }
+
+    updateManualSplitLine() {
+        const latlngs = this.splitMarkers.map(m => m.getLatLng());
+        if (this.manualSplitLine) {
+            this.manualSplitLine.setLatLngs(latlngs);
+        } else if (latlngs.length > 0) {
+            this.manualSplitLine = L.polyline(latlngs, { color: 'yellow', dashArray: '5, 10' }).addTo(this.mapManager.map);
+        }
+    }
+
+    performManualSplit() {
+        const latlngs = this.splitMarkers.map(m => m.getLatLng());
+        if (latlngs.length < 2) return;
+
+        const fieldId = document.getElementById('fp-field-id').value;
+        const field = this.fields.find(f => String(f.id) === String(fieldId));
+        if (!field) return;
+
+        const poly = turf.polygon(JSON.parse(field.geometry).coordinates);
+        const p1 = turf.point([latlngs[0].lng, latlngs[0].lat]);
+        const p2 = turf.point([latlngs[1].lng, latlngs[1].lat]);
+        const angle = turf.bearing(p1, p2);
+
+        try {
+            const extendedLine = turf.lineString([
+                turf.destination(p1, 10, angle + 180, { units: 'kilometers' }).geometry.coordinates,
+                turf.destination(p2, 10, angle, { units: 'kilometers' }).geometry.coordinates
+            ]);
+
+            const bufferedLine = turf.buffer(extendedLine, 0.01, { units: 'meters' });
+            const remaining = turf.difference(poly, bufferedLine);
+
+            let parts = [];
+            if (remaining.type === 'MultiPolygon') {
+                parts = remaining.geometry.coordinates.map(c => turf.polygon(c));
+            } else if (remaining.type === 'FeatureCollection') {
+                parts = remaining.features.filter(f => f.geometry.type === 'Polygon');
+            }
+
+            if (parts.length >= 2) {
+                field.manualParts = parts;
+                this.generateFlightPlan();
+            } else {
+                alert("Teilung fehlgeschlagen. Die Linie muss den Schlag komplett schneiden.");
+            }
+        } catch (e) {
+            console.error("Split failed", e);
+            alert("Fehler bei der Teilung.");
         }
     }
 }
