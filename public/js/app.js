@@ -713,7 +713,17 @@ class App {
     async generateFlightPlan() {
         const id = document.getElementById('fp-field-id').value;
         const field = this.fields.find(f => String(f.id) === String(id));
-        if (!field) return;
+        if (!field) {
+            console.error("generateFlightPlan: Field not found", id);
+            return;
+        }
+
+        console.log("Generating flight plan", {
+            id,
+            mode: document.getElementById('fp-mode').value,
+            pathDist: document.getElementById('fp-path-distance').value,
+            borderDist: document.getElementById('fp-border-distance').value
+        });
 
         const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
         const borderDistance = parseFloat(document.getElementById('fp-border-distance').value) || 5;
@@ -730,6 +740,7 @@ class App {
         let virtualBorder = this.getMiteredOffset(originalPoly, borderDistance, clipCorners);
 
         if (!virtualBorder) {
+            console.error("Virtual border generation failed (null)");
             alert('Abstand zum Rand ist zu groß für diesen Schlag oder der Schlag ist zu klein.');
             return;
         }
@@ -747,6 +758,7 @@ class App {
         }
 
         if (!virtualBorder || (virtualBorder.type === 'FeatureCollection' && virtualBorder.features.length === 0)) {
+            console.error("Virtual border is empty after intersection");
             alert('Abstand zum Rand ist zu groß für diesen Schlag oder der Schlag ist zu klein.');
             return;
         }
@@ -755,15 +767,15 @@ class App {
         virtualBorder = this.simplifyGeo(virtualBorder, 0.1);
         let pathPoints = [];
 
+        let smartResult = null;
         if (fpMode === 'smart') {
-            const result = this.calculateSmartPath(virtualBorder, pathDistance, minPointDist, originalPoly);
-            pathPoints = result.points;
-            if (result.multiPath && result.multiPath.length > 1) pathPoints = result;
+            smartResult = this.calculateSmartPath(virtualBorder, pathDistance, minPointDist, originalPoly);
+            pathPoints = smartResult.points;
 
-            if (result.orientation === "Smart") {
+            if (smartResult.orientation === "Smart") {
                 document.getElementById('val-fp-orientation').textContent = "Smart";
-            } else if (result.orientation !== undefined) {
-                document.getElementById('val-fp-orientation').textContent = Math.round(result.orientation);
+            } else if (smartResult.orientation !== undefined) {
+                document.getElementById('val-fp-orientation').textContent = Math.round(smartResult.orientation);
             } else {
                 document.getElementById('val-fp-orientation').textContent = "Smart";
             }
@@ -873,9 +885,9 @@ class App {
             }
         }
 
-        if (fpMode === 'smart' && pathPoints.multiPath && pathPoints.multiPath.length > 1) {
+        if (fpMode === 'smart' && smartResult && smartResult.multiPath && smartResult.multiPath.length > 1) {
             const group = L.featureGroup();
-            pathPoints.multiPath.forEach(path => {
+            smartResult.multiPath.forEach(path => {
                 L.polyline(path.latlngs, { color: path.color, weight: 3 }).addTo(group);
             });
             this.currentFlightPath = group;
@@ -1241,13 +1253,17 @@ class App {
         const fieldId = document.getElementById('fp-field-id').value;
         const field = this.fields.find(f => String(f.id) === String(fieldId));
 
+        console.log("calculateSmartPath started", { fieldId, hasManualParts: !!(field && field.manualParts) });
         if (field && field.manualParts) {
             parts = field.manualParts.map(p => turf.polygon(p.geometry.coordinates));
+            console.log("Using manual parts:", parts.length);
         } else {
             parts = this.decomposePolygon(originalPoly);
+            console.log("Decomposed into parts:", parts.length);
         }
 
         if (parts.length <= 1) {
+            console.log("Only one part, falling back to Intelligent path");
             return this.calculateIntelligentPath(virtualBorder, pathDistance, minPointDist);
         }
 
@@ -1280,7 +1296,8 @@ class App {
                 if (allPoints.length > 0) {
                     const lastPt = allPoints[allPoints.length - 1];
                     const firstPt = result.points[0];
-                    const connection = this.getBorderPath(lastPt, firstPt, originalPoly);
+                    // Connect using the virtual border to respect safe distance
+                    const connection = this.getBorderPath(lastPt, firstPt, virtualBorder);
                     connection.forEach(p => {
                         if (turf.distance(allPoints[allPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                             allPoints.push(p);
@@ -1343,8 +1360,12 @@ class App {
                             if (remaining) {
                                 if (remaining.geometry && remaining.geometry.type === 'MultiPolygon') {
                                     parts = remaining.geometry.coordinates.map(c => turf.polygon(c));
+                                } else if (remaining.geometry && remaining.geometry.type === 'Polygon') {
+                                    parts = [remaining];
                                 } else if (remaining.type === 'FeatureCollection') {
                                     parts = remaining.features.filter(f => f.geometry.type === 'Polygon');
+                                } else if (remaining.type === 'MultiPolygon') {
+                                    parts = remaining.coordinates.map(c => turf.polygon(c));
                                 }
                             }
 
@@ -1377,8 +1398,12 @@ class App {
                                 if (remaining) {
                                     if (remaining.geometry && remaining.geometry.type === 'MultiPolygon') {
                                         parts = remaining.geometry.coordinates.map(c => turf.polygon(c));
+                                    } else if (remaining.geometry && remaining.geometry.type === 'Polygon') {
+                                        parts = [remaining];
                                     } else if (remaining.type === 'FeatureCollection') {
                                         parts = remaining.features.filter(f => f.geometry.type === 'Polygon');
+                                    } else if (remaining.type === 'MultiPolygon') {
+                                        parts = remaining.coordinates.map(c => turf.polygon(c));
                                     }
                                 }
 
@@ -2215,22 +2240,37 @@ class App {
             const bufferedLine = turf.buffer(extendedLine, 0.01, { units: 'meters' });
             const remaining = turf.difference(poly, bufferedLine);
 
+            console.log("Split attempt:", {
+                poly: poly,
+                line: extendedLine,
+                result: remaining
+            });
+
             let parts = [];
-            if (remaining.type === 'MultiPolygon') {
-                parts = remaining.geometry.coordinates.map(c => turf.polygon(c));
-            } else if (remaining.type === 'FeatureCollection') {
-                parts = remaining.features.filter(f => f.geometry.type === 'Polygon');
+            if (remaining) {
+                if (remaining.geometry && remaining.geometry.type === 'MultiPolygon') {
+                    parts = remaining.geometry.coordinates.map(c => turf.polygon(c));
+                } else if (remaining.geometry && remaining.geometry.type === 'Polygon') {
+                    parts = [remaining];
+                } else if (remaining.type === 'FeatureCollection') {
+                    parts = remaining.features.filter(f => f.geometry.type === 'Polygon');
+                } else if (remaining.type === 'MultiPolygon') {
+                    parts = remaining.coordinates.map(c => turf.polygon(c));
+                }
             }
+
+            console.log("Split parts found:", parts.length);
 
             if (parts.length >= 2) {
                 field.manualParts = parts;
+                document.getElementById('fp-mode').value = 'smart';
                 this.generateFlightPlan();
             } else {
-                alert("Teilung fehlgeschlagen. Die Linie muss den Schlag komplett schneiden.");
+                alert("Teilung fehlgeschlagen. Die Linie muss den Schlag komplett schneiden. Gefundene Teile: " + parts.length);
             }
         } catch (e) {
             console.error("Split failed", e);
-            alert("Fehler bei der Teilung.");
+            alert("Fehler bei der Teilung: " + e.message);
         }
     }
 }
