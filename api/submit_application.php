@@ -9,6 +9,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $db = include __DIR__ . '/../includes/db.php';
 
 try {
+    // Honeypot check
+    if (!empty($_POST['website'])) {
+        echo json_encode(['success' => false, 'message' => 'Spam detected.']);
+        exit;
+    }
+
     $db->beginTransaction();
 
     $customerId = $_POST['customer_id'] ?? null;
@@ -62,8 +68,8 @@ try {
             fp_terrain_following, fp_show_wp_height, fp_height_mode,
             fp_drone_info, fp_finish_action, fp_rc_lost_action,
             fp_execute_rc_lost_action, fp_fly_to_wayline_mode,
-            fp_takeoff_security_height, fp_waypoint_turn_mode, fp_waypoint_heading_mode
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            fp_takeoff_security_height, fp_waypoint_turn_mode, fp_waypoint_heading_mode, flight_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         foreach ($_POST['fields'] as $field) {
             $stmtField->execute([
@@ -89,12 +95,17 @@ try {
                 $field['fp_fly_to_wayline_mode'] ?? null,
                 $field['fp_takeoff_security_height'] ?? null,
                 $field['fp_waypoint_turn_mode'] ?? null,
-                $field['fp_waypoint_heading_mode'] ?? null
+                $field['fp_waypoint_heading_mode'] ?? null,
+                $field['flight_path'] ?? null
             ]);
         }
     }
 
     $db->commit();
+
+    // Send Email Notification
+    sendEmailNotification($_POST);
+
     echo json_encode(['success' => true, 'customerId' => $customerId]);
 
 } catch (Exception $e) {
@@ -102,4 +113,61 @@ try {
         $db->rollBack();
     }
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+}
+
+/**
+ * Sends an email notification to the customer.
+ * Note: For real SMTP, it is recommended to use a library like PHPMailer.
+ * This implementation uses the PHP mail() function as a starting point.
+ */
+function sendEmailNotification($data) {
+    $to = $data['customer_email'];
+    if (empty($to)) return;
+
+    $subject = "Ihr Kundenantrag - Schlagverwaltung";
+
+    $firstName = $data['customer_first_name'] ?? '';
+    $lastName = $data['customer_name'] ?? '';
+    $company = $data['customer_company'] ?? '';
+    $email = $data['customer_email'] ?? '';
+    $phone = $data['customer_phone'] ?? '';
+    $street = $data['customer_street'] ?? '';
+    $houseNumber = $data['customer_house_number'] ?? '';
+    $postalCode = $data['customer_postal_code'] ?? '';
+    $city = $data['customer_city'] ?? '';
+    $comments = $data['customer_comments'] ?? '';
+
+    $message = "Hallo $firstName $lastName,\n\n";
+    $message .= "Vielen Dank für Ihren Antrag. Hier ist eine Zusammenfassung Ihrer Daten:\n\n";
+    $message .= "--- Persönliche Daten ---\n";
+    $message .= "Name: $firstName $lastName\n";
+    if (!empty($company)) $message .= "Firma: $company\n";
+    $message .= "Straße: $street $houseNumber\n";
+    $message .= "Ort: $postalCode $city\n";
+    $message .= "E-Mail: $email\n";
+    $message .= "Telefon: $phone\n";
+    if (!empty($comments)) $message .= "Anmerkungen: $comments\n";
+    $message .= "\n";
+
+    $totalArea = 0;
+    if (isset($data['fields']) && is_array($data['fields'])) {
+        $message .= "--- Schläge ---\n";
+        foreach ($data['fields'] as $field) {
+            $name = $field['name'] ?? 'Unbenannt';
+            $area = floatval($field['area'] ?? 0);
+            $message .= "- $name: " . number_format($area, 2, ',', '.') . " Ha\n";
+            $totalArea += $area;
+        }
+        $message .= "\nGesamtfläche: " . number_format($totalArea, 2, ',', '.') . " Ha\n";
+    }
+
+    $message .= "\nMit freundlichen Grüßen,\nIhr Team";
+
+    $headers = "From: no-reply@witt3d.de\r\n";
+    $headers .= "Reply-To: no-reply@witt3d.de\r\n";
+    $headers .= "X-Mailer: PHP/" . phpversion();
+
+    // Use mail() - for SMTP configuration, set SMTP and smtp_port in php.ini
+    // or use a library like PHPMailer for more robust SMTP support.
+    @mail($to, $subject, $message, $headers);
 }

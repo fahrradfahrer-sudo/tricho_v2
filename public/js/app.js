@@ -505,7 +505,21 @@ class App {
                 this.currentFlightPath = null;
                 this.wpLayerGroup.clearLayers();
             }
-            this.generateFlightPlan();
+
+            if (field.flight_path) {
+                const latlngs = JSON.parse(field.flight_path).map(p => L.latLng(p.lat, p.lng, p.alt));
+                this.currentFlightPath = L.polyline(latlngs, { color: 'red', weight: 3 });
+                this.mapManager.drawnItems.addLayer(this.currentFlightPath);
+                this.updateWaypointMarkers();
+                this.updateWaypointTable();
+                this.updateFPStats(field.fp_speed || 10);
+                document.getElementById('fp-stats').classList.remove('hidden');
+                this.btnExportFPKML.classList.remove('hidden');
+                this.btnExportFPKMZ.classList.remove('hidden');
+                this.btnReverseFP.classList.remove('hidden');
+            } else {
+                this.generateFlightPlan();
+            }
         } else if (this.currentFlightPath) {
             // Same field, show stats and export button if path exists
             document.getElementById('fp-stats').classList.remove('hidden');
@@ -625,14 +639,7 @@ class App {
         this.waypointTableContainer.classList.remove('hidden');
         this.waypointTableBody.innerHTML = '';
 
-        let latlngs = [];
-        if (this.currentFlightPath instanceof L.FeatureGroup) {
-            this.currentFlightPath.eachLayer(l => {
-                latlngs = latlngs.concat(l.getLatLngs());
-            });
-        } else {
-            latlngs = this.currentFlightPath.getLatLngs();
-        }
+        let latlngs = this.getCurrentFlightPathLatLngs();
 
         latlngs.forEach((ll, idx) => {
             const absHeight = ll.alt !== undefined ? ll.alt.toFixed(1) : '';
@@ -912,11 +919,43 @@ class App {
         this.btnReverseFP.classList.remove('hidden');
     }
 
+    getCurrentFlightPathLatLngs() {
+        if (!this.currentFlightPath) return [];
+        if (this.currentFlightPath instanceof L.FeatureGroup) {
+            let latlngs = [];
+            this.currentFlightPath.eachLayer(l => {
+                if (l.getLatLngs) {
+                    latlngs = latlngs.concat(l.getLatLngs());
+                }
+            });
+            return latlngs;
+        } else if (this.currentFlightPath.getLatLngs) {
+            return this.currentFlightPath.getLatLngs();
+        }
+        return [];
+    }
+
+    setCurrentFlightPathLatLngs(latlngs) {
+        if (!this.currentFlightPath) return;
+        if (this.currentFlightPath instanceof L.FeatureGroup) {
+            let count = 0;
+            this.currentFlightPath.eachLayer(l => {
+                if (l.getLatLngs && l.setLatLngs) {
+                    const len = l.getLatLngs().length;
+                    l.setLatLngs(latlngs.slice(count, count + len));
+                    count += len;
+                }
+            });
+        } else if (this.currentFlightPath.setLatLngs) {
+            this.currentFlightPath.setLatLngs(latlngs);
+        }
+    }
+
     reverseFlightPlan() {
         if (!this.currentFlightPath) return;
-        const latlngs = this.currentFlightPath.getLatLngs();
+        const latlngs = this.getCurrentFlightPathLatLngs();
         latlngs.reverse();
-        this.currentFlightPath.setLatLngs(latlngs);
+        this.setCurrentFlightPathLatLngs(latlngs);
         this.updateWaypointMarkers();
         this.updateWaypointTable();
     }
@@ -924,7 +963,7 @@ class App {
     updateWaypointMarkers() {
         if (!this.currentFlightPath) return;
         this.wpLayerGroup.clearLayers();
-        const latlngs = this.currentFlightPath.getLatLngs();
+        const latlngs = this.getCurrentFlightPathLatLngs();
         const total = latlngs.length;
         const terrainFollowing = this.terrainFollowingCheckbox.checked;
         const showWPHeight = this.showWPHeightCheckbox.checked;
@@ -1418,10 +1457,14 @@ class App {
     }
 
     updateFPStats(speed) {
-        const latlngs = this.currentFlightPath.getLatLngs();
+        const latlngs = this.getCurrentFlightPathLatLngs();
         let totalDist = 0;
         for (let i = 0; i < latlngs.length - 1; i++) {
-            totalDist += latlngs[i].distanceTo(latlngs[i+1]);
+            const p1 = latlngs[i];
+            const p2 = latlngs[i+1];
+            if (p1 && p2) {
+                totalDist += L.latLng(p1).distanceTo(L.latLng(p2));
+            }
         }
 
         document.getElementById('fp-length').textContent = totalDist.toFixed(1);
@@ -1437,7 +1480,7 @@ class App {
         const name = (field ? field.name : 'Flugplan') + '_DJI';
 
         const defaultHeight = parseFloat(document.getElementById('fp-height').value) || 15;
-        const latlngs = this.currentFlightPath.getLatLngs();
+        const latlngs = this.getCurrentFlightPathLatLngs();
         const terrainFollowing = this.terrainFollowingCheckbox.checked;
         const altitudeMode = terrainFollowing ? 'absolute' : 'relativeToGround';
         const coords = latlngs.map(ll => {
@@ -1504,7 +1547,7 @@ class App {
         const terrainFollowing = this.terrainFollowingCheckbox.checked;
         const heightMode = terrainFollowing ? document.getElementById('fp-height-mode').value : 'relativeToStartPoint';
 
-        const latlngs = this.currentFlightPath.getLatLngs();
+        const latlngs = this.getCurrentFlightPathLatLngs();
         const createTime = Date.now();
         const updateTime = createTime;
 
@@ -1949,9 +1992,11 @@ class App {
                         fieldInApp.fp_takeoff_security_height = f.fp_takeoff_security_height;
                         fieldInApp.fp_waypoint_turn_mode = f.fp_waypoint_turn_mode;
                         fieldInApp.fp_waypoint_heading_mode = f.fp_waypoint_heading_mode;
+                        fieldInApp.flight_path = f.flight_path;
                     }
                 });
 
+                this.switchStep(1); // Ensure we are on Step 1 to show the data
                 alert(`Daten von ${c.name} geladen.`);
             }
         } catch (err) {
@@ -2124,6 +2169,9 @@ class App {
         formData.append('customer_comments', document.getElementById('comments').value);
         formData.append('customer_dsgvo_accepted', document.getElementById('dsgvo').checked ? 1 : 0);
 
+        // Honeypot
+        formData.append('website', document.getElementById('website').value);
+
         this.fields.forEach((field, index) => {
             formData.append(`fields[${index}][name]`, field.name);
             formData.append(`fields[${index}][geometry]`, field.geometry);
@@ -2149,6 +2197,14 @@ class App {
             formData.append(`fields[${index}][fp_takeoff_security_height]`, field.fp_takeoff_security_height ?? 2);
             formData.append(`fields[${index}][fp_waypoint_turn_mode]`, field.fp_waypoint_turn_mode ?? 'coordinateTurn');
             formData.append(`fields[${index}][fp_waypoint_heading_mode]`, field.fp_waypoint_heading_mode ?? 'followWayline');
+
+            const currentId = document.getElementById('fp-field-id').value;
+            if (String(field.id) === String(currentId) && this.currentFlightPath) {
+                const latlngs = this.getCurrentFlightPathLatLngs();
+                formData.append(`fields[${index}][flight_path]`, JSON.stringify(latlngs));
+            } else if (field.flight_path) {
+                formData.append(`fields[${index}][flight_path]`, field.flight_path);
+            }
         });
 
         try {
