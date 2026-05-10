@@ -7,6 +7,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $db = include __DIR__ . '/../includes/db.php';
+include_once __DIR__ . '/../includes/config.php';
+
+require __DIR__ . '/../vendor/autoload.php';
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 
 try {
     // Honeypot check
@@ -21,10 +26,12 @@ try {
     $customerId = $_POST['customer_id'] ?? null;
 
     if (!$isMultiCustomer) {
+        $password = !empty($_POST['customer_password']) ? password_hash($_POST['customer_password'], PASSWORD_DEFAULT) : null;
+
         if ($customerId) {
             // Update existing customer
-            $stmt = $db->prepare("UPDATE customers SET first_name=?, name=?, company=?, street=?, house_number=?, postal_code=?, city=?, email=?, phone=?, comments=?, dsgvo_accepted=? WHERE id=?");
-            $stmt->execute([
+            $sql = "UPDATE customers SET first_name=?, name=?, company=?, street=?, house_number=?, postal_code=?, city=?, email=?, phone=?, comments=?, dsgvo_accepted=?";
+            $params = [
                 $_POST['customer_first_name'] ?? '',
                 $_POST['customer_name'] ?? '',
                 $_POST['customer_company'] ?? '',
@@ -35,30 +42,85 @@ try {
                 $_POST['customer_email'] ?? '',
                 $_POST['customer_phone'] ?? '',
                 $_POST['customer_comments'] ?? '',
-                $_POST['customer_dsgvo_accepted'] ?? 0,
-                $customerId
-            ]);
+                $_POST['customer_dsgvo_accepted'] ?? 0
+            ];
+
+            if ($password) {
+                $sql .= ", password=?";
+                $params[] = $password;
+            }
+
+            $sql .= " WHERE id=?";
+            $params[] = $customerId;
+
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
 
             // Delete old fields for this customer to replace them
             $stmtDeleteFields = $db->prepare("DELETE FROM fields WHERE customer_id = ?");
             $stmtDeleteFields->execute([$customerId]);
         } else {
-        // Insert new customer
-        $stmt = $db->prepare("INSERT INTO customers (first_name, name, company, street, house_number, postal_code, city, email, phone, comments, dsgvo_accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([
-            $_POST['customer_first_name'] ?? '',
-            $_POST['customer_name'] ?? '',
-            $_POST['customer_company'] ?? '',
-            $_POST['customer_street'] ?? '',
-            $_POST['customer_house_number'] ?? '',
-            $_POST['customer_postal_code'] ?? '',
-            $_POST['customer_city'] ?? '',
-            $_POST['customer_email'] ?? '',
-            $_POST['customer_phone'] ?? '',
-            $_POST['customer_comments'] ?? '',
-            $_POST['customer_dsgvo_accepted'] ?? 0
-        ]);
-            $customerId = $db->lastInsertId();
+            // Check if customer with this email already exists
+            $stmtCheck = $db->prepare("SELECT id, password FROM customers WHERE email = ?");
+            $stmtCheck->execute([$_POST['customer_email'] ?? '']);
+            $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+            if ($existing) {
+                // SECURITY: Only allow update if NOT password protected OR if user is logged in as this user
+                session_start();
+                $isOwner = isset($_SESSION['customer_id']) && $_SESSION['customer_id'] == $existing['id'];
+
+                if (!$existing['password'] || $isOwner) {
+                    $customerId = $existing['id'];
+                    $sql = "UPDATE customers SET first_name=?, name=?, company=?, street=?, house_number=?, postal_code=?, city=?, email=?, phone=?, comments=?, dsgvo_accepted=?";
+                    $params = [
+                        $_POST['customer_first_name'] ?? '',
+                        $_POST['customer_name'] ?? '',
+                        $_POST['customer_company'] ?? '',
+                        $_POST['customer_street'] ?? '',
+                        $_POST['customer_house_number'] ?? '',
+                        $_POST['customer_postal_code'] ?? '',
+                        $_POST['customer_city'] ?? '',
+                        $_POST['customer_email'] ?? '',
+                        $_POST['customer_phone'] ?? '',
+                        $_POST['customer_comments'] ?? '',
+                        $_POST['customer_dsgvo_accepted'] ?? 0
+                    ];
+                    if ($password) {
+                        $sql .= ", password=?";
+                        $params[] = $password;
+                    }
+                    $sql .= " WHERE id=?";
+                    $params[] = $customerId;
+                    $stmt = $db->prepare($sql);
+                    $stmt->execute($params);
+
+                    // Delete old fields
+                    $stmtDeleteFields = $db->prepare("DELETE FROM fields WHERE customer_id = ?");
+                    $stmtDeleteFields->execute([$customerId]);
+                } else {
+                    echo json_encode(['success' => false, 'message' => 'Diese E-Mail ist bereits registriert. Bitte loggen Sie sich ein.']);
+                    exit;
+                }
+            } else {
+                // Insert new customer
+                $stmt = $db->prepare("INSERT INTO customers (first_name, name, company, street, house_number, postal_code, city, email, password, phone, comments, dsgvo_accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([
+                    $_POST['customer_first_name'] ?? '',
+                    $_POST['customer_name'] ?? '',
+                    $_POST['customer_company'] ?? '',
+                    $_POST['customer_street'] ?? '',
+                    $_POST['customer_house_number'] ?? '',
+                    $_POST['customer_postal_code'] ?? '',
+                    $_POST['customer_city'] ?? '',
+                    $_POST['customer_email'] ?? '',
+                    $password,
+                    $_POST['customer_phone'] ?? '',
+                    $_POST['customer_comments'] ?? '',
+                    $_POST['customer_dsgvo_accepted'] ?? 0
+                ]);
+                $customerId = $db->lastInsertId();
+            }
         }
     }
 
@@ -135,8 +197,6 @@ try {
 
 /**
  * Sends an email notification to the customer.
- * Note: For real SMTP, it is recommended to use a library like PHPMailer.
- * This implementation uses the PHP mail() function as a starting point.
  */
 function sendEmailNotification($data) {
     $to = $data['customer_email'];
@@ -181,11 +241,30 @@ function sendEmailNotification($data) {
 
     $message .= "\nMit freundlichen Grüßen,\nIhr Team";
 
-    $headers = "From: no-reply@witt3d.de\r\n";
-    $headers .= "Reply-To: no-reply@witt3d.de\r\n";
-    $headers .= "X-Mailer: PHP/" . phpversion();
+    $mail = new PHPMailer(true);
 
-    // Use mail() - for SMTP configuration, set SMTP and smtp_port in php.ini
-    // or use a library like PHPMailer for more robust SMTP support.
-    @mail($to, $subject, $message, $headers);
+    try {
+        //Server settings
+        $mail->isSMTP();
+        $mail->Host       = SMTP_HOST;
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = SMTP_PORT;
+
+        //Recipients
+        $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+        $mail->addAddress($to, "$firstName $lastName");
+
+        //Content
+        $mail->isHTML(false);
+        $mail->Subject = $subject;
+        $mail->Body    = $message;
+
+        $mail->send();
+    } catch (Exception $e) {
+        // Log error if needed
+        error_log("Message could not be sent. Mailer Error: {$mail->ErrorInfo}");
+    }
 }

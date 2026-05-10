@@ -483,3 +483,74 @@ hr {
 .glow-effect {
     filter: drop-shadow(0 0 10px #ffcc00);
 }
+
+/* Auth Styles */
+.auth-toggle {
+    display: flex;
+    margin-bottom: 20px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.btn-auth-toggle {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    background: #fff;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.3s, color 0.3s;
+}
+
+.btn-auth-toggle.active {
+    background: #007bff;
+    color: #fff;
+}
+
+#password-group small {
+    display: block;
+    margin-top: 5px;
+    color: #666;
+}
+
+#logged-in-info {
+    padding: 15px;
+    background: #e9ecef;
+    border-radius: 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 20px;
+}
+
+#logged-in-info p {
+    margin: 0;
+    font-weight: bold;
+}
+
+/* Admin Checkboxes */
+.field-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.field-status-checkboxes {
+    display: flex;
+    gap: 10px;
+}
+
+.status-checkbox {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.status-checkbox.checked {
+    accent-color: #28a745;
+}
+
+.status-checkbox.done {
+    accent-color: #007bff;
+}
