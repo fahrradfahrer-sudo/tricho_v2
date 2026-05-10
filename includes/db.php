@@ -21,6 +21,7 @@ try {
         postal_code TEXT,
         city TEXT,
         email TEXT NOT NULL,
+        password TEXT,
         phone TEXT,
         comments TEXT,
         dsgvo_accepted INTEGER DEFAULT 0,
@@ -34,6 +35,8 @@ try {
         name TEXT,
         geometry TEXT, -- JSON string of GeoJSON
         area REAL,
+        is_checked INTEGER DEFAULT 0,
+        is_done INTEGER DEFAULT 0,
         fp_path_distance REAL,
         fp_border_distance REAL,
         fp_min_dist REAL,
@@ -59,7 +62,21 @@ try {
     )");
 
     // Migration: Add columns if they don't exist
-    $columns = [
+    $customerColumns = [
+        'password' => 'TEXT'
+    ];
+
+    foreach ($customerColumns as $col => $type) {
+        try {
+            $db->exec("ALTER TABLE customers ADD COLUMN $col $type");
+        } catch (PDOException $e) {
+            // Column might already exist
+        }
+    }
+
+    $fieldColumns = [
+        'is_checked' => 'INTEGER DEFAULT 0',
+        'is_done' => 'INTEGER DEFAULT 0',
         'fp_path_distance' => 'REAL',
         'fp_border_distance' => 'REAL',
         'fp_min_dist' => 'REAL',
@@ -82,7 +99,7 @@ try {
         'flight_path' => 'TEXT'
     ];
 
-    foreach ($columns as $col => $type) {
+    foreach ($fieldColumns as $col => $type) {
         try {
             $db->exec("ALTER TABLE fields ADD COLUMN $col $type");
         } catch (PDOException $e) {

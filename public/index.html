@@ -29,11 +29,39 @@
             <span id="step-2-indicator" class="step">2. Schläge & Karte</span>
         </div>
 
+        <div id="logged-in-info" class="hidden">
+            <p>Angemeldet als <span id="logged-in-user"></span></p>
+            <button id="btn-logout" class="btn secondary small">Abmelden</button>
+        </div>
+
         <!-- Step 1: Personal Data -->
         <div id="step-1" class="step-container">
-            <h2>Persönliche Daten</h2>
-            <form id="customer-form">
-                <div class="form-row">
+            <div id="auth-toggle" class="auth-toggle">
+                <button id="btn-show-login" class="btn-auth-toggle active">Anmelden</button>
+                <button id="btn-show-register" class="btn-auth-toggle">Benutzerkonto erstellen</button>
+            </div>
+
+            <!-- Login Form -->
+            <div id="login-container">
+                <h2>Anmelden</h2>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="login-email">E-Mail:</label>
+                        <input type="email" id="login-email" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Passwort:</label>
+                        <input type="password" id="login-password" name="password" required>
+                    </div>
+                    <button type="submit" class="btn">Einloggen</button>
+                </form>
+            </div>
+
+            <!-- Registration Form (Original Step 1 Form) -->
+            <div id="register-container" class="hidden">
+                <h2>Persönliche Daten</h2>
+                <form id="customer-form">
+                    <div class="form-row">
                     <div class="form-group">
                         <label for="first_name">Vorname:</label>
                         <input type="text" id="first_name" name="first_name">
@@ -77,6 +105,11 @@
                         <input type="tel" id="phone" name="phone">
                     </div>
                 </div>
+                <div class="form-group" id="password-group">
+                    <label for="password">Passwort (optional):</label>
+                    <input type="password" id="password" name="password">
+                    <small>Geben Sie ein Passwort an, um ein Benutzerkonto zu erstellen.</small>
+                </div>
                 <div class="form-group">
                     <label for="comments">Anmerkungen:</label>
                     <textarea id="comments" name="comments" rows="3"></textarea>
@@ -94,6 +127,7 @@
 
                 <button type="button" id="btn-next-step" class="btn">Nächster Schritt</button>
             </form>
+            </div>
         </div>
 
         <!-- Step 2: Field Management -->

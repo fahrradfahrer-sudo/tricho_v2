@@ -2,6 +2,14 @@ class App {
     constructor() {
         this.step1 = document.getElementById('step-1');
         this.step2 = document.getElementById('step-2');
+
+        this.loginContainer = document.getElementById('login-container');
+        this.registerContainer = document.getElementById('register-container');
+        this.loggedInInfo = document.getElementById('logged-in-info');
+        this.btnShowLogin = document.getElementById('btn-show-login');
+        this.btnShowRegister = document.getElementById('btn-show-register');
+        this.loginForm = document.getElementById('login-form');
+        this.btnLogout = document.getElementById('btn-logout');
         this.step1Indicator = document.getElementById('step-1-indicator');
         this.step2Indicator = document.getElementById('step-2-indicator');
         this.btnNextStep = document.getElementById('btn-next-step');
@@ -40,6 +48,7 @@ class App {
         this.initMap();
         this.initModeToggle();
         this.attachEventListeners();
+        this.checkSession();
         this.updateFieldList();
     }
 
@@ -84,16 +93,14 @@ class App {
             }
         });
 
-        // Specific handling for Kundendaten since it has its own logic
-        if (!this.isAdminMode) {
+        // Specific handling for Kundendaten: show if Admin OR if a customer is loaded/data is mirrored
+        const hasData = document.getElementById('cd-name').value !== '';
+        if (this.isAdminMode || this.currentCustomerId || hasData) {
+            document.getElementById('customer-data-section').classList.remove('hidden');
+            document.getElementById('customer-data-hr').classList.remove('hidden');
+        } else {
             document.getElementById('customer-data-section').classList.add('hidden');
             document.getElementById('customer-data-hr').classList.add('hidden');
-        } else {
-            // If we have a customer selected, show it
-            if (this.currentCustomerId) {
-                document.getElementById('customer-data-section').classList.remove('hidden');
-                document.getElementById('customer-data-hr').classList.remove('hidden');
-            }
         }
 
         this.updateFieldList();
@@ -195,6 +202,23 @@ class App {
     }
 
     attachEventListeners() {
+        this.btnShowLogin.addEventListener('click', () => {
+            this.showLoginView();
+        });
+
+        this.btnShowRegister.addEventListener('click', () => {
+            this.showRegisterView();
+        });
+
+        this.loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleLogin();
+        });
+
+        this.btnLogout.addEventListener('click', () => {
+            this.handleLogout();
+        });
+
         this.btnNextStep.addEventListener('click', () => {
             if (this.validateStep1()) {
                 this.switchStep(2);
@@ -332,6 +356,66 @@ class App {
         }
 
         return true;
+    }
+
+    showLoginView() {
+        this.loginContainer.classList.remove('hidden');
+        this.registerContainer.classList.add('hidden');
+        this.btnShowLogin.classList.add('active');
+        this.btnShowRegister.classList.remove('active');
+    }
+
+    showRegisterView() {
+        this.loginContainer.classList.add('hidden');
+        this.registerContainer.classList.remove('hidden');
+        this.btnShowLogin.classList.remove('active');
+        this.btnShowRegister.classList.add('active');
+    }
+
+    async checkSession() {
+        try {
+            const response = await fetch('../api/get_session.php');
+            const result = await response.json();
+            if (result.success && result.customerId) {
+                await this.loadCustomerData(result.customerId, false);
+                this.switchStep(2);
+            }
+        } catch (err) {
+            console.error('Session check failed', err);
+        }
+    }
+
+    async handleLogin() {
+        const formData = new FormData(this.loginForm);
+        try {
+            const response = await fetch('../api/login.php', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            if (result.success) {
+                await this.loadCustomerData(result.customerId, false);
+                this.switchStep(2);
+            } else {
+                alert(result.message || 'Login fehlgeschlagen');
+            }
+        } catch (err) {
+            console.error('Login error', err);
+            alert('Ein Fehler ist aufgetreten.');
+        }
+    }
+
+    async handleLogout() {
+        try {
+            const response = await fetch('../api/logout.php');
+            const result = await response.json();
+            if (result.success) {
+                this.resetToNewCustomer();
+                location.reload();
+            }
+        } catch (err) {
+            console.error('Logout error', err);
+        }
     }
 
     switchStep(step) {
@@ -569,17 +653,43 @@ class App {
         this.fields.forEach(field => {
             const div = document.createElement('div');
             div.className = 'field-item';
+
+            const isAdmin = this.isAdminMode;
+            const isChecked = field.is_checked == 1;
+            const isDone = field.is_done == 1;
+
             div.innerHTML = `
-                <h4>${field.name}</h4>
+                <div class="field-item-header">
+                    <h4>${field.name}</h4>
+                    ${isAdmin ? `
+                    <div class="field-status-checkboxes">
+                        <input type="checkbox" class="status-checkbox checked" title="Flugplan geprüft" ${isChecked ? 'checked' : ''} data-id="${field.db_id}" data-col="is_checked">
+                        <input type="checkbox" class="status-checkbox done" title="Erledigt" ${isDone ? 'checked' : ''} data-id="${field.db_id}" data-col="is_done">
+                    </div>
+                    ` : ''}
+                </div>
                 <p>Fläche: ${field.area.toFixed(2)} Ha</p>
                 <div class="actions">
                     <button class="btn secondary action-zoom">Zoom</button>
-                    ${this.isAdminMode ? '<button class="btn secondary action-fp">Flugplan</button>' : ''}
-                    ${this.isAdminMode ? '<button class="btn secondary action-kml">KML</button>' : ''}
+                    ${isAdmin ? '<button class="btn secondary action-fp">Flugplan</button>' : ''}
+                    ${isAdmin ? '<button class="btn secondary action-kml">KML</button>' : ''}
                     <button class="btn secondary action-rename">Umbenennen</button>
                     <button class="btn action-delete">Löschen</button>
                 </div>
             `;
+            if (isAdmin) {
+                div.querySelectorAll('.status-checkbox').forEach(cb => {
+                    cb.addEventListener('change', async (e) => {
+                        const dbId = e.target.dataset.id;
+                        if (!dbId) return;
+                        const col = e.target.dataset.col;
+                        const val = e.target.checked ? 1 : 0;
+                        await this.updateFieldStatus(dbId, col, val);
+                        field[col] = val;
+                    });
+                });
+            }
+
             div.querySelector('.action-zoom').addEventListener('click', () => {
                 this.zoomToField(field.id);
                 if (this.currentCustomerId === 'all' && field.customer_id) {
@@ -2163,7 +2273,10 @@ class App {
 
                     const fieldInApp = this.fields.find(fApp => fApp.name === f.name);
                     if (fieldInApp) {
+                        fieldInApp.db_id = f.id;
                         fieldInApp.customer_id = f.customer_id;
+                        fieldInApp.is_checked = f.is_checked;
+                        fieldInApp.is_done = f.is_done;
                         fieldInApp.fp_path_distance = f.fp_path_distance;
                         fieldInApp.fp_border_distance = f.fp_border_distance;
                         fieldInApp.fp_min_dist = f.fp_min_dist;
@@ -2197,7 +2310,7 @@ class App {
         }
     }
 
-    async loadCustomerData(id) {
+    async loadCustomerData(id, showAlert = true) {
         try {
             const response = await fetch(`../api/get_customer_data.php?id=${id}`);
             const result = await response.json();
@@ -2205,7 +2318,15 @@ class App {
                 this.currentCustomerId = id;
                 const c = result.customer;
 
-                // Populate Step 1
+                // Update UI for logged in state
+                document.getElementById('auth-toggle').classList.add('hidden');
+                this.loginContainer.classList.add('hidden');
+                this.registerContainer.classList.add('hidden');
+                this.loggedInInfo.classList.remove('hidden');
+                this.loggedInInfo.style.setProperty('display', 'flex', 'important'); // Ensure it's visible if hidden by class
+                document.getElementById('logged-in-user').textContent = `${c.first_name} ${c.name}`;
+
+                // Populate Step 1 (Register container fields)
                 document.getElementById('first_name').value = c.first_name;
                 document.getElementById('name').value = c.name;
                 document.getElementById('company').value = c.company;
@@ -2234,6 +2355,9 @@ class App {
                 result.fields.forEach(f => {
                     const fieldInApp = this.fields.find(fApp => fApp.name === f.name);
                     if (fieldInApp) {
+                        fieldInApp.db_id = f.id;
+                        fieldInApp.is_checked = f.is_checked;
+                        fieldInApp.is_done = f.is_done;
                         fieldInApp.fp_path_distance = f.fp_path_distance;
                         fieldInApp.fp_border_distance = f.fp_border_distance;
                         fieldInApp.fp_min_dist = f.fp_min_dist;
@@ -2273,11 +2397,27 @@ class App {
                 this.updateFieldList();
                 this.displayCustomerData(c);
 
-                alert(`Daten von ${c.name} geladen.`);
+                if (showAlert) alert(`Daten von ${c.name} geladen.`);
             }
         } catch (err) {
             console.error(err);
-            alert('Fehler beim Laden der Kundendaten.');
+            if (showAlert) alert('Fehler beim Laden der Kundendaten.');
+        }
+    }
+
+    async updateFieldStatus(fieldId, column, value) {
+        try {
+            const formData = new FormData();
+            formData.append('field_id', fieldId);
+            formData.append('column', column);
+            formData.append('value', value);
+
+            await fetch('../api/update_field_status.php', {
+                method: 'POST',
+                body: formData
+            });
+        } catch (err) {
+            console.error('Failed to update field status', err);
         }
     }
 
@@ -2310,6 +2450,11 @@ class App {
         this.updateFieldList();
         this.hideCustomerDataSection();
         document.getElementById('customer-select').value = "";
+
+        document.getElementById('auth-toggle').classList.remove('hidden');
+        this.loggedInInfo.classList.add('hidden');
+        this.showLoginView();
+
         this.switchStep(1);
     }
 
@@ -2328,11 +2473,9 @@ class App {
         document.getElementById('cd-phone').value = document.getElementById('phone').value;
         document.getElementById('cd-comments').value = document.getElementById('comments').value;
 
-        // Show customer data section in sidebar if it's not hidden by mode UI
-        if (this.isAdminMode) {
-            document.getElementById('customer-data-section').classList.remove('hidden');
-            document.getElementById('customer-data-hr').classList.remove('hidden');
-        }
+        // Show customer data section in sidebar
+        document.getElementById('customer-data-section').classList.remove('hidden');
+        document.getElementById('customer-data-hr').classList.remove('hidden');
     }
 
     displayCustomerData(c) {
@@ -2511,6 +2654,12 @@ class App {
 
         // Honeypot
         formData.append('website', document.getElementById('website').value);
+
+        // Password for registration
+        const password = document.getElementById('password').value;
+        if (password) {
+            formData.append('customer_password', password);
+        }
 
         this.fields.forEach((field, index) => {
             formData.append(`fields[${index}][customer_id]`, getFieldCustomerId(field));
