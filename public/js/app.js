@@ -132,7 +132,11 @@ class App {
         // Customer Management Listeners
         document.getElementById('btn-load-customer').addEventListener('click', () => {
             const id = document.getElementById('customer-select').value;
-            if (id) this.loadCustomerData(id);
+            if (id === 'all') {
+                this.loadAllCustomers();
+            } else if (id) {
+                this.loadCustomerData(id);
+            }
         });
 
         document.getElementById('btn-delete-customer').addEventListener('click', () => {
@@ -168,6 +172,11 @@ class App {
 
         this.initFPInputs();
         this.initSidebarLogic();
+
+        document.getElementById('toggle-customer-data').addEventListener('click', () => {
+            const section = document.getElementById('customer-data-section');
+            section.classList.toggle('collapsed');
+        });
 
         this.btnExportFPKML.addEventListener('click', () => {
             this.exportFlightPlanKML();
@@ -460,8 +469,20 @@ class App {
                     <button class="btn action-delete">Löschen</button>
                 </div>
             `;
-            div.querySelector('.action-zoom').addEventListener('click', () => this.zoomToField(field.id));
-            div.querySelector('.action-fp').addEventListener('click', () => this.openFlightPlanSidebar(field.id));
+            div.querySelector('.action-zoom').addEventListener('click', () => {
+                this.zoomToField(field.id);
+                if (this.currentCustomerId === 'all' && field.customer_id) {
+                    const cust = this.allCustomersData.find(c => String(c.id) === String(field.customer_id));
+                    if (cust) this.displayCustomerData(cust);
+                }
+            });
+            div.querySelector('.action-fp').addEventListener('click', () => {
+                this.openFlightPlanSidebar(field.id);
+                if (this.currentCustomerId === 'all' && field.customer_id) {
+                    const cust = this.allCustomersData.find(c => String(c.id) === String(field.customer_id));
+                    if (cust) this.displayCustomerData(cust);
+                }
+            });
             div.querySelector('.action-kml').addEventListener('click', () => this.exportFieldKML(field.id));
             div.querySelector('.action-rename').addEventListener('click', () => this.editFieldName(field.id));
             div.querySelector('.action-delete').addEventListener('click', () => this.deleteField(field.id));
@@ -538,8 +559,8 @@ class App {
         }
     }
 
-    getMiteredOffset(poly, distance, clip, originalBoundary = null) {
-        if (distance <= 0) return poly;
+    getMiteredOffset(poly, distance, clip, originalBoundary = null, smartPathSpacing = null) {
+        if (distance <= 0 && smartPathSpacing === null) return poly;
 
         const rewound = turf.rewind(poly);
         const geom = rewound.geometry || rewound;
@@ -557,18 +578,25 @@ class App {
                 const isPrevShared = originalBoundary ? this.isSharedEdge(pPrev, pCurr, originalBoundary) : false;
                 const isNextShared = originalBoundary ? this.isSharedEdge(pCurr, pNext, originalBoundary) : false;
 
-                if (isPrevShared && isNextShared) {
-                    newRing.push(pCurr);
-                    continue;
-                }
-
                 const b1 = turf.bearing(pPrev, pCurr);
                 const b2 = turf.bearing(pCurr, pNext);
                 const n1 = b1 - 90;
                 const n2 = b2 - 90;
 
-                const d1 = isPrevShared ? 0 : distance;
-                const d2 = isNextShared ? 0 : distance;
+                let d1 = distance;
+                let d2 = distance;
+
+                if (isPrevShared) {
+                    d1 = smartPathSpacing !== null ? (smartPathSpacing / 2) : 0;
+                }
+                if (isNextShared) {
+                    d2 = smartPathSpacing !== null ? (smartPathSpacing / 2) : 0;
+                }
+
+                if (d1 === 0 && d2 === 0) {
+                    newRing.push(pCurr);
+                    continue;
+                }
 
                 const pPrevOffset = turf.destination(turf.point(pPrev), d1, n1, {units: 'meters'});
                 const pCurrOffset1 = turf.destination(turf.point(pCurr), d1, n1, {units: 'meters'});
@@ -582,7 +610,8 @@ class App {
 
                 if (intersect) {
                     const distToOrig = turf.distance(turf.point(pCurr), turf.point(intersect), {units: 'meters'});
-                    if (clip && distToOrig > distance * 2.5) {
+                    const maxD = Math.max(d1, d2);
+                    if (clip && distToOrig > maxD * 2.5) {
                         if (d1 > 0) newRing.push(pCurrOffset1.geometry.coordinates);
                         if (d2 > 0) newRing.push(pCurrOffset2.geometry.coordinates);
                         if (d1 === 0 && d2 === 0) newRing.push(pCurr);
@@ -905,6 +934,28 @@ class App {
         this.updateWaypointMarkers();
         this.updateWaypointTable();
 
+        // Update the field object with the new flight path and parameters
+        field.flight_path = JSON.stringify(this.getCurrentFlightPathLatLngs());
+        field.fp_mode = fpMode;
+        field.fp_path_distance = pathDistance;
+        field.fp_border_distance = borderDistance;
+        field.fp_min_dist = minPointDist;
+        field.fp_orientation = orientation === "" ? 0 : parseFloat(orientation);
+        field.fp_speed = speed;
+        field.fp_height = parseFloat(document.getElementById('fp-height').value) || 15;
+        field.fp_clip_corners = clipCorners ? 1 : 0;
+        field.fp_terrain_following = this.terrainFollowingCheckbox.checked ? 1 : 0;
+        field.fp_show_wp_height = this.showWPHeightCheckbox.checked ? 1 : 0;
+        field.fp_height_mode = document.getElementById('fp-height-mode').value;
+        field.fp_drone_info = document.getElementById('fp-drone-info').value;
+        field.fp_finish_action = document.getElementById('fp-finish-action').value;
+        field.fp_rc_lost_action = document.getElementById('fp-rc-lost-action').value;
+        field.fp_execute_rc_lost_action = document.getElementById('fp-execute-rc-lost-action').value;
+        field.fp_fly_to_wayline_mode = document.getElementById('fp-fly-to-wayline-mode').value;
+        field.fp_takeoff_security_height = document.getElementById('fp-takeoff-security-height').value;
+        field.fp_waypoint_turn_mode = document.getElementById('fp-waypoint-turn-mode').value;
+        field.fp_waypoint_heading_mode = document.getElementById('fp-waypoint-heading-mode').value;
+
         this.mapManager.drawnItems.addLayer(this.currentFlightPath);
         if (this.currentFlightPath.editing) {
             if (this.editWaypointsCheckbox.checked) this.currentFlightPath.editing.enable();
@@ -1225,6 +1276,7 @@ class App {
         const mid = turf.midpoint(p1, p2);
         const nearest = turf.nearestPointOnLine(originalBoundary, mid, { units: 'meters' });
         const dist = turf.distance(mid, nearest, { units: 'meters' });
+        // If distance to original boundary is significant (>0.1m), it's a shared (internal) edge
         return dist > 0.1;
     }
 
@@ -1289,6 +1341,7 @@ class App {
 
     calculateSmartPath(virtualBorder, pathDistance, minPointDist, originalPoly) {
         let parts = [];
+        const pathSpacing = parseFloat(document.getElementById('fp-path-distance').value) || 10;
         const fieldId = document.getElementById('fp-field-id').value;
         const field = this.fields.find(f => String(f.id) === String(fieldId));
 
@@ -1313,7 +1366,7 @@ class App {
 
         const originalBoundary = turf.polygonToLine(originalPoly);
         parts.forEach((part, idx) => {
-            let partVirtualBorder = this.getMiteredOffset(part, borderDistance, clipCorners, originalBoundary);
+            let partVirtualBorder = this.getMiteredOffset(part, borderDistance, clipCorners, originalBoundary, pathSpacing);
             if (!partVirtualBorder) return;
 
             try {
@@ -1921,6 +1974,12 @@ class App {
                 const select = document.getElementById('customer-select');
                 const currentValue = select.value;
                 select.innerHTML = '<option value="">-- Kunde wählen --</option>';
+
+                const allOption = document.createElement('option');
+                allOption.value = 'all';
+                allOption.textContent = '-- Gesamt (Alle Kunden) --';
+                select.appendChild(allOption);
+
                 result.customers.forEach(c => {
                     const option = document.createElement('option');
                     option.value = c.id;
@@ -1931,6 +1990,60 @@ class App {
             }
         } catch (err) {
             console.error('Failed to refresh customer list', err);
+        }
+    }
+
+    async loadAllCustomers() {
+        try {
+            const response = await fetch('../api/get_all_data.php');
+            const result = await response.json();
+            if (result.success) {
+                this.currentCustomerId = 'all';
+                this.mapManager.drawnItems.clearLayers();
+                this.fields = [];
+                this.allCustomersData = result.customers; // Store for lookup
+
+                result.fields.forEach(f => {
+                    const geoJson = JSON.parse(f.geometry);
+                    this.mapManager.addFieldToMap({
+                        type: 'Feature',
+                        geometry: geoJson,
+                        properties: { name: f.name }
+                    }, f.name);
+
+                    const fieldInApp = this.fields.find(fApp => fApp.name === f.name);
+                    if (fieldInApp) {
+                        fieldInApp.customer_id = f.customer_id;
+                        fieldInApp.fp_path_distance = f.fp_path_distance;
+                        fieldInApp.fp_border_distance = f.fp_border_distance;
+                        fieldInApp.fp_min_dist = f.fp_min_dist;
+                        fieldInApp.fp_orientation = f.fp_orientation;
+                        fieldInApp.fp_speed = f.fp_speed;
+                        fieldInApp.fp_height = f.fp_height;
+                        fieldInApp.fp_mode = f.fp_mode;
+                        fieldInApp.fp_clip_corners = f.fp_clip_corners;
+                        fieldInApp.fp_terrain_following = f.fp_terrain_following;
+                        fieldInApp.fp_show_wp_height = f.fp_show_wp_height;
+                        fieldInApp.fp_height_mode = f.fp_height_mode;
+                        fieldInApp.fp_drone_info = f.fp_drone_info;
+                        fieldInApp.fp_finish_action = f.fp_finish_action;
+                        fieldInApp.fp_rc_lost_action = f.fp_rc_lost_action;
+                        fieldInApp.fp_execute_rc_lost_action = f.fp_execute_rc_lost_action;
+                        fieldInApp.fp_fly_to_wayline_mode = f.fp_fly_to_wayline_mode;
+                        fieldInApp.fp_takeoff_security_height = f.fp_takeoff_security_height;
+                        fieldInApp.fp_waypoint_turn_mode = f.fp_waypoint_turn_mode;
+                        fieldInApp.fp_waypoint_heading_mode = f.fp_waypoint_heading_mode;
+                        fieldInApp.flight_path = f.flight_path;
+                    }
+                });
+
+                this.updateFieldList();
+                this.hideCustomerDataSection();
+                alert('Alle Kunden und Schläge geladen.');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Fehler beim Laden aller Daten.');
         }
     }
 
@@ -1968,6 +2081,7 @@ class App {
                 });
 
                 this.updateFieldList();
+                this.displayCustomerData(c);
 
                 // Hydrate fields with saved FP parameters if they exist
                 result.fields.forEach(f => {
@@ -1996,7 +2110,6 @@ class App {
                     }
                 });
 
-                this.switchStep(1); // Ensure we are on Step 1 to show the data
                 alert(`Daten von ${c.name} geladen.`);
             }
         } catch (err) {
@@ -2032,7 +2145,32 @@ class App {
         this.mapManager.drawnItems.clearLayers();
         this.fields = [];
         this.updateFieldList();
+        this.hideCustomerDataSection();
         document.getElementById('customer-select').value = "";
+        this.switchStep(1);
+    }
+
+    displayCustomerData(c) {
+        document.getElementById('customer-data-section').classList.remove('hidden');
+        document.getElementById('customer-data-section').classList.remove('collapsed'); // Expand when showing data
+        document.getElementById('customer-data-hr').classList.remove('hidden');
+
+        document.getElementById('cd-id').value = c.id;
+        document.getElementById('cd-first_name').value = c.first_name || '';
+        document.getElementById('cd-name').value = c.name || '';
+        document.getElementById('cd-company').value = c.company || '';
+        document.getElementById('cd-street').value = c.street || '';
+        document.getElementById('cd-house_number').value = c.house_number || '';
+        document.getElementById('cd-postal_code').value = c.postal_code || '';
+        document.getElementById('cd-city').value = c.city || '';
+        document.getElementById('cd-email').value = c.email || '';
+        document.getElementById('cd-phone').value = c.phone || '';
+        document.getElementById('cd-comments').value = c.comments || '';
+    }
+
+    hideCustomerDataSection() {
+        document.getElementById('customer-data-section').classList.add('hidden');
+        document.getElementById('customer-data-hr').classList.add('hidden');
     }
 
     initSidebarLogic() {
@@ -2154,25 +2292,43 @@ class App {
         }
 
         const formData = new FormData();
-        if (this.currentCustomerId) {
-            formData.append('customer_id', this.currentCustomerId);
+
+        const getFieldCustomerId = (f) => {
+            if (this.currentCustomerId === 'all') return f.customer_id;
+            return this.currentCustomerId;
+        };
+
+        if (this.currentCustomerId === 'all') {
+            formData.append('is_multi_customer', '1');
         }
-        formData.append('customer_first_name', document.getElementById('first_name').value);
-        formData.append('customer_name', document.getElementById('name').value);
-        formData.append('customer_company', document.getElementById('company').value);
-        formData.append('customer_street', document.getElementById('street').value);
-        formData.append('customer_house_number', document.getElementById('house_number').value);
-        formData.append('customer_postal_code', document.getElementById('postal_code').value);
-        formData.append('customer_city', document.getElementById('city').value);
-        formData.append('customer_email', document.getElementById('email').value);
-        formData.append('customer_phone', document.getElementById('phone').value);
-        formData.append('customer_comments', document.getElementById('comments').value);
-        formData.append('customer_dsgvo_accepted', document.getElementById('dsgvo').checked ? 1 : 0);
+
+        const isStep2 = !this.step2.classList.contains('hidden');
+        const prefix = isStep2 ? 'cd-' : '';
+        const cid = isStep2 ? document.getElementById('cd-id').value : this.currentCustomerId;
+
+        if (cid && cid !== 'all') {
+            formData.append('customer_id', cid);
+        }
+
+        if (cid || (this.currentCustomerId !== 'all')) {
+            formData.append('customer_first_name', document.getElementById(prefix + 'first_name').value);
+            formData.append('customer_name', document.getElementById(prefix + 'name').value);
+            formData.append('customer_company', document.getElementById(prefix + 'company').value);
+            formData.append('customer_street', document.getElementById(prefix + 'street').value);
+            formData.append('customer_house_number', document.getElementById(prefix + 'house_number').value);
+            formData.append('customer_postal_code', document.getElementById(prefix + 'postal_code').value);
+            formData.append('customer_city', document.getElementById(prefix + 'city').value);
+            formData.append('customer_email', document.getElementById(prefix + 'email').value);
+            formData.append('customer_phone', document.getElementById(prefix + 'phone').value);
+            formData.append('customer_comments', document.getElementById(prefix + 'comments').value);
+            formData.append('customer_dsgvo_accepted', document.getElementById('dsgvo').checked ? 1 : 0);
+        }
 
         // Honeypot
         formData.append('website', document.getElementById('website').value);
 
         this.fields.forEach((field, index) => {
+            formData.append(`fields[${index}][customer_id]`, getFieldCustomerId(field));
             formData.append(`fields[${index}][name]`, field.name);
             formData.append(`fields[${index}][geometry]`, field.geometry);
             formData.append(`fields[${index}][area]`, field.area);

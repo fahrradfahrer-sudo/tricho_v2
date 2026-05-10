@@ -17,30 +17,32 @@ try {
 
     $db->beginTransaction();
 
+    $isMultiCustomer = isset($_POST['is_multi_customer']) && $_POST['is_multi_customer'] == '1';
     $customerId = $_POST['customer_id'] ?? null;
 
-    if ($customerId) {
-        // Update existing customer
-        $stmt = $db->prepare("UPDATE customers SET first_name=?, name=?, company=?, street=?, house_number=?, postal_code=?, city=?, email=?, phone=?, comments=?, dsgvo_accepted=? WHERE id=?");
-        $stmt->execute([
-            $_POST['customer_first_name'] ?? '',
-            $_POST['customer_name'] ?? '',
-            $_POST['customer_company'] ?? '',
-            $_POST['customer_street'] ?? '',
-            $_POST['customer_house_number'] ?? '',
-            $_POST['customer_postal_code'] ?? '',
-            $_POST['customer_city'] ?? '',
-            $_POST['customer_email'] ?? '',
-            $_POST['customer_phone'] ?? '',
-            $_POST['customer_comments'] ?? '',
-            $_POST['customer_dsgvo_accepted'] ?? 0,
-            $customerId
-        ]);
+    if (!$isMultiCustomer) {
+        if ($customerId) {
+            // Update existing customer
+            $stmt = $db->prepare("UPDATE customers SET first_name=?, name=?, company=?, street=?, house_number=?, postal_code=?, city=?, email=?, phone=?, comments=?, dsgvo_accepted=? WHERE id=?");
+            $stmt->execute([
+                $_POST['customer_first_name'] ?? '',
+                $_POST['customer_name'] ?? '',
+                $_POST['customer_company'] ?? '',
+                $_POST['customer_street'] ?? '',
+                $_POST['customer_house_number'] ?? '',
+                $_POST['customer_postal_code'] ?? '',
+                $_POST['customer_city'] ?? '',
+                $_POST['customer_email'] ?? '',
+                $_POST['customer_phone'] ?? '',
+                $_POST['customer_comments'] ?? '',
+                $_POST['customer_dsgvo_accepted'] ?? 0,
+                $customerId
+            ]);
 
-        // Delete old fields to replace them with new ones
-        $stmtDeleteFields = $db->prepare("DELETE FROM fields WHERE customer_id = ?");
-        $stmtDeleteFields->execute([$customerId]);
-    } else {
+            // Delete old fields for this customer to replace them
+            $stmtDeleteFields = $db->prepare("DELETE FROM fields WHERE customer_id = ?");
+            $stmtDeleteFields->execute([$customerId]);
+        } else {
         // Insert new customer
         $stmt = $db->prepare("INSERT INTO customers (first_name, name, company, street, house_number, postal_code, city, email, phone, comments, dsgvo_accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([
@@ -56,11 +58,24 @@ try {
             $_POST['customer_comments'] ?? '',
             $_POST['customer_dsgvo_accepted'] ?? 0
         ]);
-        $customerId = $db->lastInsertId();
+            $customerId = $db->lastInsertId();
+        }
     }
 
     // Insert Fields
     if (isset($_POST['fields']) && is_array($_POST['fields'])) {
+        if ($isMultiCustomer) {
+            // Collect all involved customer IDs and delete their fields first
+            $involvedCustomerIds = [];
+            foreach ($_POST['fields'] as $field) {
+                if (isset($field['customer_id'])) $involvedCustomerIds[$field['customer_id']] = true;
+            }
+            if (!empty($involvedCustomerIds)) {
+                $ids = implode(',', array_map('intval', array_keys($involvedCustomerIds)));
+                $db->exec("DELETE FROM fields WHERE customer_id IN ($ids)");
+            }
+        }
+
         $stmtField = $db->prepare("INSERT INTO fields (
             customer_id, name, geometry, area,
             fp_path_distance, fp_border_distance, fp_min_dist, fp_orientation,
@@ -72,8 +87,11 @@ try {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         foreach ($_POST['fields'] as $field) {
+            $fCustomerId = $isMultiCustomer ? ($field['customer_id'] ?? null) : $customerId;
+            if (!$fCustomerId) continue;
+
             $stmtField->execute([
-                $customerId,
+                $fCustomerId,
                 $field['name'] ?? 'Untitled Field',
                 $field['geometry'] ?? '{}',
                 $field['area'] ?? 0.0,
