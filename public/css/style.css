@@ -479,3 +479,7 @@ hr {
 .wp-number-icon.wp-start, .wp-number-icon.wp-end {
     z-index: 1000 !important;
 }
+
+.glow-effect {
+    filter: drop-shadow(0 0 10px #ffcc00);
+}

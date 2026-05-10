@@ -30,6 +30,7 @@ class App {
         this.history = []; // History for undo
         this.currentFlightPath = null;
         this.fpUpdateTimeout = null;
+        this.isTakeoffHeightManuallySet = false;
         this.currentCustomerId = null;
         this.colors = ['red', 'blue', 'green', 'orange', 'purple', 'cyan'];
         this.manualSplitMode = false;
@@ -96,10 +97,31 @@ class App {
         }
 
         this.updateFieldList();
+        this.updateFlightPlanVisibility();
 
         // Close flightplan sidebar if entering Benutzer mode
         if (!this.isAdminMode && !this.fpSidebar.classList.contains('hidden')) {
             this.closeFPSidebar.click();
+        }
+    }
+
+    updateFlightPlanVisibility() {
+        if (this.isAdminMode) {
+            // In Admin mode, always show the current flight path and markers
+            if (this.currentFlightPath && !this.mapManager.drawnItems.hasLayer(this.currentFlightPath)) {
+                this.mapManager.drawnItems.addLayer(this.currentFlightPath);
+            }
+            if (!this.mapManager.map.hasLayer(this.wpLayerGroup)) {
+                this.wpLayerGroup.addTo(this.mapManager.map);
+            }
+        } else {
+            // In Benutzer mode, hide current flight path and markers
+            if (this.currentFlightPath && this.mapManager.drawnItems.hasLayer(this.currentFlightPath)) {
+                this.mapManager.drawnItems.removeLayer(this.currentFlightPath);
+            }
+            if (this.mapManager.map.hasLayer(this.wpLayerGroup)) {
+                this.mapManager.map.removeLayer(this.wpLayerGroup);
+            }
         }
     }
 
@@ -315,6 +337,7 @@ class App {
     switchStep(step) {
         if (step === 2) {
             this.refreshCustomerList();
+            this.mirrorStep1ToStep2();
         }
         if (step === 1) {
             this.step1.classList.remove('hidden');
@@ -375,7 +398,32 @@ class App {
         syncInput('slider-fp-border-distance', 'fp-border-distance', 'val-fp-border-distance', 'fp_border_distance');
         syncInput('slider-fp-orientation', 'fp-orientation', 'val-fp-orientation', 'fp_orientation', true);
         syncInput('slider-fp-speed', 'fp-speed', 'val-fp-speed', 'fp_speed');
-        syncInput('slider-fp-height', 'fp-height', 'val-fp-height', 'fp_height');
+
+        // Custom sync for fp-height to also update takeoff height
+        const heightSlider = document.getElementById('slider-fp-height');
+        const heightInput = document.getElementById('fp-height');
+        const heightValSpan = document.getElementById('val-fp-height');
+
+        const updateHeight = (val, source) => {
+            if (source !== 'slider' && heightSlider) heightSlider.value = val;
+            if (source !== 'input' && heightInput) heightInput.value = val;
+            if (heightValSpan) heightValSpan.textContent = val;
+
+            updateActiveFieldParam('fp_height', val);
+
+            // Automatically update takeoff security height if not manually set
+            if (!this.isTakeoffHeightManuallySet) {
+                const takeoffInput = document.getElementById('fp-takeoff-security-height');
+                if (takeoffInput) {
+                    takeoffInput.value = val;
+                    updateActiveFieldParam('fp_takeoff_security_height', val);
+                }
+            }
+            this.scheduleFPUpdate();
+        };
+
+        if (heightSlider) heightSlider.addEventListener('input', (e) => updateHeight(e.target.value, 'slider'));
+        if (heightInput) heightInput.addEventListener('change', (e) => updateHeight(e.target.value, 'input'));
 
         document.getElementById('fp-mode').addEventListener('change', (e) => {
             updateActiveFieldParam('fp_mode', e.target.value);
@@ -438,6 +486,7 @@ class App {
         });
 
         document.getElementById('fp-takeoff-security-height').addEventListener('change', (e) => {
+            this.isTakeoffHeightManuallySet = true;
             updateActiveFieldParam('fp_takeoff_security_height', e.target.value);
         });
 
@@ -550,6 +599,10 @@ class App {
             }
             div.querySelector('.action-rename').addEventListener('click', () => this.editFieldName(field.id));
             div.querySelector('.action-delete').addEventListener('click', () => this.deleteField(field.id));
+
+            div.addEventListener('mouseenter', () => this.highlightField(field.id));
+            div.addEventListener('mouseleave', () => this.unhighlightField(field.id));
+
             this.fieldList.appendChild(div);
         });
     }
@@ -561,10 +614,39 @@ class App {
         }
     }
 
+    highlightField(id) {
+        const layer = this.mapManager.drawnItems.getLayer(id);
+        if (layer && typeof layer.setStyle === 'function') {
+            layer.setStyle({
+                weight: 8,
+                color: '#ffcc00',
+                className: 'glow-effect'
+            });
+            if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+                layer.bringToFront();
+            }
+        }
+    }
+
+    unhighlightField(id) {
+        const layer = this.mapManager.drawnItems.getLayer(id);
+        if (layer && typeof layer.setStyle === 'function') {
+            layer.setStyle({
+                weight: 3,
+                color: '#3388ff',
+                className: ''
+            });
+        }
+    }
+
     openFlightPlanSidebar(id) {
         const prevId = document.getElementById('fp-field-id').value;
         const field = this.fields.find(f => String(f.id) === String(id));
         if (!field) return;
+
+        if (prevId !== id) {
+            this.isTakeoffHeightManuallySet = false;
+        }
 
         document.getElementById('fp-field-id').value = id;
         this.fpSidebar.classList.remove('hidden');
@@ -594,7 +676,9 @@ class App {
             if (field.flight_path) {
                 const latlngs = JSON.parse(field.flight_path).map(p => L.latLng(p.lat, p.lng, p.alt));
                 this.currentFlightPath = L.polyline(latlngs, { color: 'red', weight: 3 });
-                this.mapManager.drawnItems.addLayer(this.currentFlightPath);
+                if (this.isAdminMode) {
+                    this.mapManager.drawnItems.addLayer(this.currentFlightPath);
+                }
                 this.updateWaypointMarkers();
                 this.updateWaypointTable();
                 this.updateFPStats(field.fp_speed || 10);
@@ -1020,7 +1104,9 @@ class App {
         field.fp_waypoint_turn_mode = document.getElementById('fp-waypoint-turn-mode').value;
         field.fp_waypoint_heading_mode = document.getElementById('fp-waypoint-heading-mode').value;
 
-        this.mapManager.drawnItems.addLayer(this.currentFlightPath);
+        if (this.isAdminMode) {
+            this.mapManager.drawnItems.addLayer(this.currentFlightPath);
+        }
         if (this.currentFlightPath.editing) {
             if (this.editWaypointsCheckbox.checked) this.currentFlightPath.editing.enable();
             else this.currentFlightPath.editing.disable();
@@ -2227,6 +2313,28 @@ class App {
         this.switchStep(1);
     }
 
+    mirrorStep1ToStep2() {
+        // Only mirror if we are not editing an existing customer
+        if (this.currentCustomerId && this.currentCustomerId !== 'all') return;
+
+        document.getElementById('cd-first_name').value = document.getElementById('first_name').value;
+        document.getElementById('cd-name').value = document.getElementById('name').value;
+        document.getElementById('cd-company').value = document.getElementById('company').value;
+        document.getElementById('cd-street').value = document.getElementById('street').value;
+        document.getElementById('cd-house_number').value = document.getElementById('house_number').value;
+        document.getElementById('cd-postal_code').value = document.getElementById('postal_code').value;
+        document.getElementById('cd-city').value = document.getElementById('city').value;
+        document.getElementById('cd-email').value = document.getElementById('email').value;
+        document.getElementById('cd-phone').value = document.getElementById('phone').value;
+        document.getElementById('cd-comments').value = document.getElementById('comments').value;
+
+        // Show customer data section in sidebar if it's not hidden by mode UI
+        if (this.isAdminMode) {
+            document.getElementById('customer-data-section').classList.remove('hidden');
+            document.getElementById('customer-data-hr').classList.remove('hidden');
+        }
+    }
+
     displayCustomerData(c) {
         document.getElementById('customer-data-section').classList.remove('hidden');
         // document.getElementById('customer-data-section').classList.remove('collapsed'); // Should stay collapsed by default
@@ -2387,19 +2495,19 @@ class App {
             formData.append('customer_id', cid);
         }
 
-        if (cid || (this.currentCustomerId !== 'all')) {
-            formData.append('customer_first_name', document.getElementById(prefix + 'first_name').value);
-            formData.append('customer_name', document.getElementById(prefix + 'name').value);
-            formData.append('customer_company', document.getElementById(prefix + 'company').value);
-            formData.append('customer_street', document.getElementById(prefix + 'street').value);
-            formData.append('customer_house_number', document.getElementById(prefix + 'house_number').value);
-            formData.append('customer_postal_code', document.getElementById(prefix + 'postal_code').value);
-            formData.append('customer_city', document.getElementById(prefix + 'city').value);
-            formData.append('customer_email', document.getElementById(prefix + 'email').value);
-            formData.append('customer_phone', document.getElementById(prefix + 'phone').value);
-            formData.append('customer_comments', document.getElementById(prefix + 'comments').value);
-            formData.append('customer_dsgvo_accepted', document.getElementById('dsgvo').checked ? 1 : 0);
-        }
+        // Always use Step 2 data if available and we're on Step 2
+        const sourcePrefix = isStep2 ? 'cd-' : '';
+        formData.append('customer_first_name', document.getElementById(sourcePrefix + 'first_name').value);
+        formData.append('customer_name', document.getElementById(sourcePrefix + 'name').value);
+        formData.append('customer_company', document.getElementById(sourcePrefix + 'company').value);
+        formData.append('customer_street', document.getElementById(sourcePrefix + 'street').value);
+        formData.append('customer_house_number', document.getElementById(sourcePrefix + 'house_number').value);
+        formData.append('customer_postal_code', document.getElementById(sourcePrefix + 'postal_code').value);
+        formData.append('customer_city', document.getElementById(sourcePrefix + 'city').value);
+        formData.append('customer_email', document.getElementById(sourcePrefix + 'email').value);
+        formData.append('customer_phone', document.getElementById(sourcePrefix + 'phone').value);
+        formData.append('customer_comments', document.getElementById(sourcePrefix + 'comments').value);
+        formData.append('customer_dsgvo_accepted', document.getElementById('dsgvo').checked ? 1 : 0);
 
         // Honeypot
         formData.append('website', document.getElementById('website').value);
@@ -2434,8 +2542,10 @@ class App {
             const currentId = document.getElementById('fp-field-id').value;
             if (String(field.id) === String(currentId) && this.currentFlightPath) {
                 const latlngs = this.getCurrentFlightPathLatLngs();
-                formData.append(`fields[${index}][flight_path]`, JSON.stringify(latlngs));
+                const points = latlngs.map(ll => ({ lat: ll.lat, lng: ll.lng, alt: ll.alt }));
+                formData.append(`fields[${index}][flight_path]`, JSON.stringify(points));
             } else if (field.flight_path) {
+                // Already a JSON string
                 formData.append(`fields[${index}][flight_path]`, field.flight_path);
             }
         });
