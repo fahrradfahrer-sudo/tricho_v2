@@ -80,6 +80,21 @@ class MapManager {
         L.drawLocal.edit.handlers.edit.tooltip.subtext = 'Klicken Sie auf Abbrechen, um die Änderungen rückgängig zu machen.';
         L.drawLocal.edit.handlers.remove.tooltip.text = 'Klicken Sie auf eine Funktion, um sie zu entfernen.';
 
+        // Fix for mobile "shape edges cannot cross" error
+        if (L.Browser.touch) {
+            if (L.Draw && L.Draw.Polyline && L.Draw.Polyline.prototype.options) {
+                L.Draw.Polyline.prototype.options.touchExtend = false;
+            }
+            if (L.Draw && L.Draw.Polygon && L.Draw.Polygon.prototype.options) {
+                L.Draw.Polygon.prototype.options.touchExtend = false;
+            }
+
+            // Also override the Edit.Poly to be safe
+            if (L.Edit && L.Edit.Poly && L.Edit.Poly.prototype.options) {
+                L.Edit.Poly.prototype.options.touchExtend = false;
+            }
+        }
+
         // Leaflet Draw Control
         const drawControl = new L.Control.Draw({
             edit: {
@@ -88,13 +103,17 @@ class MapManager {
             draw: {
                 polygon: {
                     allowIntersection: false,
-                    showArea: true
+                    showArea: true,
+                    touchExtend: false,
+                    guidelineDistance: 20 // Help avoiding accidental self-intersections on touch
                 },
                 polyline: false,
                 circle: false,
                 marker: false,
                 circlemarker: false,
-                rectangle: true
+                rectangle: {
+                    touchExtend: false
+                }
             }
         });
         this.map.addControl(drawControl);
