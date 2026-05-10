@@ -15,23 +15,25 @@
     <div id="app" class="container">
         <div class="header-container">
             <h1>Kundenantrag - Schlagverwaltung</h1>
-            <div class="mode-toggle">
-                <span id="mode-label">Admin-Modus</span>
-                <label class="switch">
-                    <input type="checkbox" id="mode-switch" checked>
-                    <span class="slider round"></span>
-                </label>
+            <div class="header-right">
+                <div id="admin-mode-container" class="mode-toggle hidden">
+                    <span id="mode-label">Admin-Modus</span>
+                    <label class="switch">
+                        <input type="checkbox" id="mode-switch" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div id="user-display" class="user-display hidden">
+                    <span class="user-icon">👤</span>
+                    <span id="display-username"></span>
+                    <button id="btn-logout-header" class="btn secondary small" title="Abmelden">Logout</button>
+                </div>
             </div>
         </div>
 
         <div id="step-indicators" class="steps">
             <span id="step-1-indicator" class="step active">1. Persönliche Daten</span>
             <span id="step-2-indicator" class="step">2. Schläge & Karte</span>
-        </div>
-
-        <div id="logged-in-info" class="hidden">
-            <p>Angemeldet als <span id="logged-in-user"></span></p>
-            <button id="btn-logout" class="btn secondary small">Abmelden</button>
         </div>
 
         <!-- Step 1: Personal Data -->
@@ -52,6 +54,10 @@
                     <div class="form-group">
                         <label for="login-password">Passwort:</label>
                         <input type="password" id="login-password" name="password" required>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <input type="checkbox" id="remember-me" name="remember_me">
+                        <label for="remember-me">Angemeldet bleiben</label>
                     </div>
                     <button type="submit" class="btn">Einloggen</button>
                 </form>

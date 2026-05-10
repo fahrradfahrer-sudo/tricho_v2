@@ -5,11 +5,12 @@ class App {
 
         this.loginContainer = document.getElementById('login-container');
         this.registerContainer = document.getElementById('register-container');
-        this.loggedInInfo = document.getElementById('logged-in-info');
+        this.userDisplay = document.getElementById('user-display');
+        this.adminModeContainer = document.getElementById('admin-mode-container');
         this.btnShowLogin = document.getElementById('btn-show-login');
         this.btnShowRegister = document.getElementById('btn-show-register');
         this.loginForm = document.getElementById('login-form');
-        this.btnLogout = document.getElementById('btn-logout');
+        this.btnLogoutHeader = document.getElementById('btn-logout-header');
         this.step1Indicator = document.getElementById('step-1-indicator');
         this.step2Indicator = document.getElementById('step-2-indicator');
         this.btnNextStep = document.getElementById('btn-next-step');
@@ -72,6 +73,20 @@ class App {
 
     updateModeUI() {
         this.modeLabel.textContent = this.isAdminMode ? 'Admin-Modus' : 'Benutzer-Modus';
+
+        // Admin-Modus toggle visibility
+        if (this.loggedInUserEmail === 'mwitt3d@gmail.com') {
+            this.adminModeContainer.classList.remove('hidden');
+        } else {
+            this.adminModeContainer.classList.add('hidden');
+            // If not admin user, force benutzer mode
+            if (this.isAdminMode) {
+                this.isAdminMode = false;
+                this.modeSwitch.checked = false;
+                localStorage.setItem('appMode', 'benutzer');
+                this.modeLabel.textContent = 'Benutzer-Modus';
+            }
+        }
 
         // Elements to hide/show
         const adminElements = [
@@ -215,7 +230,7 @@ class App {
             this.handleLogin();
         });
 
-        this.btnLogout.addEventListener('click', () => {
+        this.btnLogoutHeader.addEventListener('click', () => {
             this.handleLogout();
         });
 
@@ -652,7 +667,7 @@ class App {
 
         this.fields.forEach(field => {
             const div = document.createElement('div');
-            div.className = 'field-item';
+            div.className = 'field-item compact';
 
             const isAdmin = this.isAdminMode;
             const isChecked = field.is_checked == 1;
@@ -660,21 +675,23 @@ class App {
 
             div.innerHTML = `
                 <div class="field-item-header">
-                    <h4>${field.name}</h4>
-                    ${isAdmin ? `
-                    <div class="field-status-checkboxes">
-                        <input type="checkbox" class="status-checkbox checked" title="Flugplan geprüft" ${isChecked ? 'checked' : ''} data-id="${field.db_id}" data-col="is_checked">
-                        <input type="checkbox" class="status-checkbox done" title="Erledigt" ${isDone ? 'checked' : ''} data-id="${field.db_id}" data-col="is_done">
+                    <div class="field-info">
+                        <span class="field-name" title="${field.name}">${field.name}</span>
+                        <span class="field-size">${field.area.toFixed(2)} ha</span>
                     </div>
-                    ` : ''}
+                    <div class="field-status-checkboxes">
+                        ${isAdmin ? `
+                            <input type="checkbox" class="status-checkbox checked" title="Flugplan geprüft" ${isChecked ? 'checked' : ''} data-id="${field.db_id}" data-col="is_checked">
+                        ` : ''}
+                        <input type="checkbox" class="status-checkbox done" title="Erledigt" ${isDone ? 'checked' : ''} data-id="${field.db_id}" data-col="is_done" ${!isAdmin ? 'disabled' : ''}>
+                    </div>
                 </div>
-                <p>Fläche: ${field.area.toFixed(2)} Ha</p>
-                <div class="actions">
-                    <button class="btn secondary action-zoom">Zoom</button>
-                    ${isAdmin ? '<button class="btn secondary action-fp">Flugplan</button>' : ''}
-                    ${isAdmin ? '<button class="btn secondary action-kml">KML</button>' : ''}
-                    <button class="btn secondary action-rename">Umbenennen</button>
-                    <button class="btn action-delete">Löschen</button>
+                <div class="field-actions-compact">
+                    <button class="btn-icon action-zoom" title="Zoom">🔍</button>
+                    ${isAdmin ? '<button class="btn-icon action-fp" title="Flugplan">🚁</button>' : ''}
+                    ${isAdmin ? '<button class="btn-icon action-kml" title="KML">KML</button>' : ''}
+                    <button class="btn-icon action-rename" title="Umbenennen">✏️</button>
+                    <button class="btn-icon action-delete" title="Löschen">🗑️</button>
                 </div>
             `;
             if (isAdmin) {
@@ -1790,7 +1807,10 @@ class App {
 
         const id = document.getElementById('fp-field-id').value;
         const field = this.fields.find(f => String(f.id) === String(id));
-        const name = (field ? field.name : 'Flugplan') + '_DJI';
+        const customerName = document.getElementById('cd-name').value || 'Kunde';
+        const fieldArea = field ? field.area.toFixed(2) : '0';
+        const fieldName = field ? field.name : 'Flugplan';
+        const name = `${customerName}_${fieldArea}_${fieldName}`;
 
         const defaultHeight = parseFloat(document.getElementById('fp-height').value) || 15;
         const latlngs = this.getCurrentFlightPathLatLngs();
@@ -1843,7 +1863,10 @@ class App {
 
         const id = document.getElementById('fp-field-id').value;
         const field = this.fields.find(f => String(f.id) === String(id));
-        const name = (field ? field.name : 'Flugplan');
+        const customerName = document.getElementById('cd-name').value || 'Kunde';
+        const fieldArea = field ? field.area.toFixed(2) : '0';
+        const fieldName = field ? field.name : 'Flugplan';
+        const name = `${customerName}_${fieldArea}_${fieldName}`;
 
         const droneEnumValue = document.getElementById('fp-drone-info').value;
         const finishAction = document.getElementById('fp-finish-action').value;
@@ -1966,13 +1989,16 @@ class App {
     exportFieldKML(id) {
         const field = this.fields.find(f => String(f.id) === String(id));
         if (field) {
+            const customerName = document.getElementById('cd-name').value || 'Kunde';
+            const fieldArea = field.area.toFixed(2);
+            const fileName = `${customerName}_${fieldArea}_${field.name}`;
             const geoJson = JSON.parse(field.geometry);
             const kmlContent = this.convertToKML(geoJson, field.name);
             const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${field.name}.kml`;
+            a.download = `${fileName}.kml`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -2317,14 +2343,16 @@ class App {
             if (result.success) {
                 this.currentCustomerId = id;
                 const c = result.customer;
+                this.loggedInUserEmail = c.email;
 
                 // Update UI for logged in state
                 document.getElementById('auth-toggle').classList.add('hidden');
                 this.loginContainer.classList.add('hidden');
                 this.registerContainer.classList.add('hidden');
-                this.loggedInInfo.classList.remove('hidden');
-                this.loggedInInfo.style.setProperty('display', 'flex', 'important'); // Ensure it's visible if hidden by class
-                document.getElementById('logged-in-user').textContent = `${c.first_name} ${c.name}`;
+                this.userDisplay.classList.remove('hidden');
+                document.getElementById('display-username').textContent = `${c.first_name} ${c.name}`;
+
+                this.updateModeUI();
 
                 // Populate Step 1 (Register container fields)
                 document.getElementById('first_name').value = c.first_name;
@@ -2397,6 +2425,18 @@ class App {
                 this.updateFieldList();
                 this.displayCustomerData(c);
 
+                // Auto-zoom to all fields
+                if (this.fields.length > 0) {
+                    const group = L.featureGroup();
+                    this.fields.forEach(f => {
+                        const layer = this.mapManager.drawnItems.getLayer(f.id);
+                        if (layer) group.addLayer(layer);
+                    });
+                    if (group.getLayers().length > 0) {
+                        this.mapManager.map.fitBounds(group.getBounds(), { padding: [20, 20], maxZoom: 18 });
+                    }
+                }
+
                 if (showAlert) alert(`Daten von ${c.name} geladen.`);
             }
         } catch (err) {
@@ -2444,6 +2484,7 @@ class App {
 
     resetToNewCustomer() {
         this.currentCustomerId = null;
+        this.loggedInUserEmail = null;
         document.getElementById('customer-form').reset();
         this.mapManager.drawnItems.clearLayers();
         this.fields = [];
@@ -2452,7 +2493,8 @@ class App {
         document.getElementById('customer-select').value = "";
 
         document.getElementById('auth-toggle').classList.remove('hidden');
-        this.loggedInInfo.classList.add('hidden');
+        this.userDisplay.classList.add('hidden');
+        this.adminModeContainer.classList.add('hidden');
         this.showLoginView();
 
         this.switchStep(1);

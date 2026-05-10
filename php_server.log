@@ -1,0 +1,259 @@
+[Sun May 10 19:39:04 2026] PHP 8.3.6 Development Server (http://localhost:8000) started
+[Sun May 10 19:39:22 2026] [::1]:52016 Accepted
+[Sun May 10 19:39:22 2026] [::1]:52016 [302]: GET /
+[Sun May 10 19:39:22 2026] [::1]:52016 Closing
+[Sun May 10 19:39:22 2026] [::1]:52026 Accepted
+[Sun May 10 19:39:22 2026] [::1]:52026 [200]: GET /public/index.html
+[Sun May 10 19:39:22 2026] [::1]:52026 Closing
+[Sun May 10 19:39:22 2026] [::1]:52036 Accepted
+[Sun May 10 19:39:22 2026] [::1]:52050 Accepted
+[Sun May 10 19:39:22 2026] [::1]:52056 Accepted
+[Sun May 10 19:39:22 2026] [::1]:52036 [200]: GET /public/css/style.css
+[Sun May 10 19:39:22 2026] [::1]:52036 Closing
+[Sun May 10 19:39:22 2026] [::1]:52050 [200]: GET /public/js/map.js
+[Sun May 10 19:39:22 2026] [::1]:52050 Closing
+[Sun May 10 19:39:22 2026] [::1]:52056 [200]: GET /public/js/app.js
+[Sun May 10 19:39:22 2026] [::1]:52056 Closing
+[Sun May 10 19:39:22 2026] [::1]:52066 Accepted
+[Sun May 10 19:39:22 2026] [::1]:52066 [200]: GET /api/get_session.php
+[Sun May 10 19:39:22 2026] [::1]:52066 Closing
+[Sun May 10 19:39:22 2026] [::1]:52078 Accepted
+[Sun May 10 19:39:22 2026] [::1]:52078 [200]: POST /api/login.php
+[Sun May 10 19:39:22 2026] [::1]:52078 Closing
+[Sun May 10 19:39:22 2026] [::1]:52094 Accepted
+[Sun May 10 19:39:22 2026] [::1]:52094 [200]: GET /api/get_customer_data.php?id=1
+[Sun May 10 19:39:22 2026] [::1]:52094 Closing
+[Sun May 10 19:39:22 2026] [::1]:52096 Accepted
+[Sun May 10 19:39:22 2026] [::1]:52096 [200]: GET /api/get_customers.php
+[Sun May 10 19:39:22 2026] [::1]:52096 Closing
+[Sun May 10 19:39:23 2026] [::1]:52102 Accepted
+[Sun May 10 19:39:23 2026] [::1]:52102 [200]: GET /api/logout.php
+[Sun May 10 19:39:23 2026] [::1]:52102 Closing
+[Sun May 10 19:39:23 2026] [::1]:52104 Accepted
+[Sun May 10 19:39:23 2026] [::1]:52104 [200]: GET /public/index.html
+[Sun May 10 19:39:23 2026] [::1]:52104 Closing
+[Sun May 10 19:39:23 2026] [::1]:52106 Accepted
+[Sun May 10 19:39:23 2026] [::1]:52106 [200]: GET /public/css/style.css
+[Sun May 10 19:39:23 2026] [::1]:52106 Closing
+[Sun May 10 19:39:23 2026] [::1]:52112 Accepted
+[Sun May 10 19:39:23 2026] [::1]:52114 Accepted
+[Sun May 10 19:39:23 2026] [::1]:52112 [200]: GET /public/js/map.js
+[Sun May 10 19:39:23 2026] [::1]:52114 [200]: GET /public/js/app.js
+[Sun May 10 19:39:23 2026] [::1]:52112 Closing
+[Sun May 10 19:39:23 2026] [::1]:52114 Closing
+[Sun May 10 19:39:23 2026] [::1]:52116 Accepted
+[Sun May 10 19:39:23 2026] [::1]:52116 [200]: GET /api/get_session.php
+[Sun May 10 19:39:23 2026] [::1]:52116 Closing
+[Sun May 10 19:39:23 2026] [::1]:52122 Accepted
+[Sun May 10 19:39:23 2026] [::1]:52122 [200]: POST /api/login.php
+[Sun May 10 19:39:23 2026] [::1]:52122 Closing
+[Sun May 10 19:39:23 2026] [::1]:52132 Accepted
+[Sun May 10 19:39:23 2026] [::1]:52132 [200]: GET /api/get_customer_data.php?id=2
+[Sun May 10 19:39:23 2026] [::1]:52132 Closing
+[Sun May 10 19:39:23 2026] [::1]:52142 Accepted
+[Sun May 10 19:39:23 2026] [::1]:52142 [200]: GET /api/get_customers.php
+[Sun May 10 19:39:23 2026] [::1]:52142 Closing
+[Sun May 10 19:40:19 2026] [::1]:58058 Accepted
+[Sun May 10 19:40:19 2026] [::1]:58058 [200]: GET /public/index.html
+[Sun May 10 19:40:19 2026] [::1]:58058 Closing
+[Sun May 10 19:40:19 2026] [::1]:58074 Accepted
+[Sun May 10 19:40:19 2026] [::1]:58078 Accepted
+[Sun May 10 19:40:19 2026] [::1]:58080 Accepted
+[Sun May 10 19:40:19 2026] [::1]:58074 [200]: GET /public/css/style.css
+[Sun May 10 19:40:19 2026] [::1]:58074 Closing
+[Sun May 10 19:40:19 2026] [::1]:58078 [200]: GET /public/js/map.js
+[Sun May 10 19:40:19 2026] [::1]:58078 Closing
+[Sun May 10 19:40:19 2026] [::1]:58080 [200]: GET /public/js/app.js
+[Sun May 10 19:40:19 2026] [::1]:58080 Closing
+[Sun May 10 19:40:19 2026] [::1]:58092 Accepted
+[Sun May 10 19:40:19 2026] [::1]:58092 [200]: GET /api/get_session.php
+[Sun May 10 19:40:19 2026] [::1]:58092 Closing
+[Sun May 10 19:40:20 2026] [::1]:58108 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58108 [200]: POST /api/login.php
+[Sun May 10 19:40:20 2026] [::1]:58108 Closing
+[Sun May 10 19:40:20 2026] [::1]:58118 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58118 [200]: GET /api/get_customer_data.php?id=1
+[Sun May 10 19:40:20 2026] [::1]:58118 Closing
+[Sun May 10 19:40:20 2026] [::1]:58120 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58120 [200]: GET /api/get_customers.php
+[Sun May 10 19:40:20 2026] [::1]:58120 Closing
+[Sun May 10 19:40:20 2026] [::1]:58134 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58134 [200]: GET /api/logout.php
+[Sun May 10 19:40:20 2026] [::1]:58134 Closing
+[Sun May 10 19:40:20 2026] [::1]:58140 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58140 [200]: GET /public/index.html
+[Sun May 10 19:40:20 2026] [::1]:58140 Closing
+[Sun May 10 19:40:20 2026] [::1]:58148 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58148 [200]: GET /public/css/style.css
+[Sun May 10 19:40:20 2026] [::1]:58148 Closing
+[Sun May 10 19:40:20 2026] [::1]:58160 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58160 [200]: GET /public/js/map.js
+[Sun May 10 19:40:20 2026] [::1]:58160 Closing
+[Sun May 10 19:40:20 2026] [::1]:58168 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58168 [200]: GET /public/js/app.js
+[Sun May 10 19:40:20 2026] [::1]:58168 Closing
+[Sun May 10 19:40:20 2026] [::1]:58174 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58174 [200]: GET /api/get_session.php
+[Sun May 10 19:40:20 2026] [::1]:58174 Closing
+[Sun May 10 19:40:20 2026] [::1]:58188 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58188 [200]: POST /api/login.php
+[Sun May 10 19:40:20 2026] [::1]:58188 Closing
+[Sun May 10 19:40:20 2026] [::1]:58202 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58202 [200]: GET /api/get_customer_data.php?id=2
+[Sun May 10 19:40:20 2026] [::1]:58202 Closing
+[Sun May 10 19:40:20 2026] [::1]:58214 Accepted
+[Sun May 10 19:40:20 2026] [::1]:58214 [200]: GET /api/get_customers.php
+[Sun May 10 19:40:20 2026] [::1]:58214 Closing
+[Sun May 10 19:40:56 2026] [::1]:43914 Accepted
+[Sun May 10 19:40:56 2026] [::1]:43914 [200]: GET /public/index.html
+[Sun May 10 19:40:56 2026] [::1]:43914 Closing
+[Sun May 10 19:40:56 2026] [::1]:43930 Accepted
+[Sun May 10 19:40:56 2026] [::1]:43934 Accepted
+[Sun May 10 19:40:56 2026] [::1]:43950 Accepted
+[Sun May 10 19:40:56 2026] [::1]:43930 [200]: GET /public/css/style.css
+[Sun May 10 19:40:56 2026] [::1]:43930 Closing
+[Sun May 10 19:40:56 2026] [::1]:43934 [200]: GET /public/js/map.js
+[Sun May 10 19:40:56 2026] [::1]:43934 Closing
+[Sun May 10 19:40:56 2026] [::1]:43950 [200]: GET /public/js/app.js
+[Sun May 10 19:40:56 2026] [::1]:43950 Closing
+[Sun May 10 19:40:57 2026] [::1]:43962 Accepted
+[Sun May 10 19:40:57 2026] [::1]:43962 [200]: GET /api/get_session.php
+[Sun May 10 19:40:57 2026] [::1]:43962 Closing
+[Sun May 10 19:40:57 2026] [::1]:43966 Accepted
+[Sun May 10 19:40:57 2026] [::1]:43966 [200]: POST /api/login.php
+[Sun May 10 19:40:57 2026] [::1]:43966 Closing
+[Sun May 10 19:40:57 2026] [::1]:43972 Accepted
+[Sun May 10 19:40:57 2026] [::1]:43972 [200]: GET /api/get_customer_data.php?id=1
+[Sun May 10 19:40:57 2026] [::1]:43972 Closing
+[Sun May 10 19:40:57 2026] [::1]:43974 Accepted
+[Sun May 10 19:40:57 2026] [::1]:43974 [200]: GET /api/get_customers.php
+[Sun May 10 19:40:57 2026] [::1]:43974 Closing
+[Sun May 10 19:40:57 2026] [::1]:43980 Accepted
+[Sun May 10 19:40:57 2026] [::1]:43980 [200]: GET /api/logout.php
+[Sun May 10 19:40:57 2026] [::1]:43980 Closing
+[Sun May 10 19:40:57 2026] [::1]:43982 Accepted
+[Sun May 10 19:40:57 2026] [::1]:43982 [200]: GET /public/index.html
+[Sun May 10 19:40:57 2026] [::1]:43982 Closing
+[Sun May 10 19:40:57 2026] [::1]:43992 Accepted
+[Sun May 10 19:40:57 2026] [::1]:43992 [200]: GET /public/css/style.css
+[Sun May 10 19:40:57 2026] [::1]:43992 Closing
+[Sun May 10 19:40:57 2026] [::1]:44008 Accepted
+[Sun May 10 19:40:57 2026] [::1]:44022 Accepted
+[Sun May 10 19:40:57 2026] [::1]:44008 [200]: GET /public/js/map.js
+[Sun May 10 19:40:57 2026] [::1]:44022 [200]: GET /public/js/app.js
+[Sun May 10 19:40:57 2026] [::1]:44008 Closing
+[Sun May 10 19:40:57 2026] [::1]:44022 Closing
+[Sun May 10 19:40:57 2026] [::1]:44038 Accepted
+[Sun May 10 19:40:57 2026] [::1]:44038 [200]: GET /api/get_session.php
+[Sun May 10 19:40:57 2026] [::1]:44038 Closing
+[Sun May 10 19:40:57 2026] [::1]:44046 Accepted
+[Sun May 10 19:40:57 2026] [::1]:44046 [200]: POST /api/login.php
+[Sun May 10 19:40:57 2026] [::1]:44046 Closing
+[Sun May 10 19:40:57 2026] [::1]:44062 Accepted
+[Sun May 10 19:40:57 2026] [::1]:44062 [200]: GET /api/get_customer_data.php?id=2
+[Sun May 10 19:40:57 2026] [::1]:44062 Closing
+[Sun May 10 19:40:58 2026] [::1]:44076 Accepted
+[Sun May 10 19:40:58 2026] [::1]:44076 [200]: GET /api/get_customers.php
+[Sun May 10 19:40:58 2026] [::1]:44076 Closing
+[Sun May 10 19:42:22 2026] [::1]:50472 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50472 [200]: GET /public/index.html
+[Sun May 10 19:42:22 2026] [::1]:50472 Closing
+[Sun May 10 19:42:22 2026] [::1]:50474 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50484 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50486 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50474 [200]: GET /public/css/style.css
+[Sun May 10 19:42:22 2026] [::1]:50474 Closing
+[Sun May 10 19:42:22 2026] [::1]:50484 [200]: GET /public/js/map.js
+[Sun May 10 19:42:22 2026] [::1]:50484 Closing
+[Sun May 10 19:42:22 2026] [::1]:50486 [200]: GET /public/js/app.js
+[Sun May 10 19:42:22 2026] [::1]:50486 Closing
+[Sun May 10 19:42:22 2026] [::1]:50498 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50498 [200]: GET /api/get_session.php
+[Sun May 10 19:42:22 2026] [::1]:50498 Closing
+[Sun May 10 19:42:22 2026] [::1]:50510 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50510 [200]: POST /api/login.php
+[Sun May 10 19:42:22 2026] [::1]:50510 Closing
+[Sun May 10 19:42:22 2026] [::1]:50512 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50512 [200]: GET /api/get_customer_data.php?id=1
+[Sun May 10 19:42:22 2026] [::1]:50512 Closing
+[Sun May 10 19:42:22 2026] [::1]:50516 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50516 [200]: GET /api/get_customers.php
+[Sun May 10 19:42:22 2026] [::1]:50516 Closing
+[Sun May 10 19:42:22 2026] [::1]:50528 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50528 [200]: GET /api/logout.php
+[Sun May 10 19:42:22 2026] [::1]:50528 Closing
+[Sun May 10 19:42:22 2026] [::1]:50536 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50536 [200]: GET /public/index.html
+[Sun May 10 19:42:22 2026] [::1]:50536 Closing
+[Sun May 10 19:42:22 2026] [::1]:50552 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50552 [200]: GET /public/css/style.css
+[Sun May 10 19:42:22 2026] [::1]:50552 Closing
+[Sun May 10 19:42:22 2026] [::1]:50558 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50564 Accepted
+[Sun May 10 19:42:22 2026] [::1]:50558 [200]: GET /public/js/map.js
+[Sun May 10 19:42:22 2026] [::1]:50564 [200]: GET /public/js/app.js
+[Sun May 10 19:42:22 2026] [::1]:50558 Closing
+[Sun May 10 19:42:22 2026] [::1]:50564 Closing
+[Sun May 10 19:42:23 2026] [::1]:50574 Accepted
+[Sun May 10 19:42:23 2026] [::1]:50574 [200]: GET /api/get_session.php
+[Sun May 10 19:42:23 2026] [::1]:50574 Closing
+[Sun May 10 19:42:23 2026] [::1]:50578 Accepted
+[Sun May 10 19:42:23 2026] [::1]:50578 [200]: POST /api/login.php
+[Sun May 10 19:42:23 2026] [::1]:50578 Closing
+[Sun May 10 19:42:23 2026] [::1]:50580 Accepted
+[Sun May 10 19:42:23 2026] [::1]:50580 [200]: GET /api/get_customer_data.php?id=2
+[Sun May 10 19:42:23 2026] [::1]:50580 Closing
+[Sun May 10 19:42:23 2026] [::1]:50586 Accepted
+[Sun May 10 19:42:23 2026] [::1]:50586 [200]: GET /api/get_customers.php
+[Sun May 10 19:42:23 2026] [::1]:50586 Closing
+[Sun May 10 19:43:23 2026] [::1]:36998 Accepted
+[Sun May 10 19:43:23 2026] [::1]:36998 [200]: GET /public/index.html
+[Sun May 10 19:43:23 2026] [::1]:36998 Closing
+[Sun May 10 19:43:23 2026] [::1]:37010 Accepted
+[Sun May 10 19:43:23 2026] [::1]:37026 Accepted
+[Sun May 10 19:43:23 2026] [::1]:37034 Accepted
+[Sun May 10 19:43:23 2026] [::1]:37010 [200]: GET /public/css/style.css
+[Sun May 10 19:43:23 2026] [::1]:37010 Closing
+[Sun May 10 19:43:23 2026] [::1]:37026 [200]: GET /public/js/map.js
+[Sun May 10 19:43:23 2026] [::1]:37026 Closing
+[Sun May 10 19:43:23 2026] [::1]:37034 [200]: GET /public/js/app.js
+[Sun May 10 19:43:23 2026] [::1]:37034 Closing
+[Sun May 10 19:43:23 2026] [::1]:37038 Accepted
+[Sun May 10 19:43:23 2026] [::1]:37038 [200]: GET /api/get_session.php
+[Sun May 10 19:43:23 2026] [::1]:37038 Closing
+[Sun May 10 19:43:24 2026] [::1]:37054 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37054 [200]: POST /api/login.php
+[Sun May 10 19:43:24 2026] [::1]:37054 Closing
+[Sun May 10 19:43:24 2026] [::1]:37056 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37056 [200]: GET /api/get_customer_data.php?id=1
+[Sun May 10 19:43:24 2026] [::1]:37056 Closing
+[Sun May 10 19:43:24 2026] [::1]:37064 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37064 [200]: GET /api/get_customers.php
+[Sun May 10 19:43:24 2026] [::1]:37064 Closing
+[Sun May 10 19:43:24 2026] [::1]:37066 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37066 [200]: GET /api/logout.php
+[Sun May 10 19:43:24 2026] [::1]:37066 Closing
+[Sun May 10 19:43:24 2026] [::1]:37068 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37068 [200]: GET /public/index.html
+[Sun May 10 19:43:24 2026] [::1]:37068 Closing
+[Sun May 10 19:43:24 2026] [::1]:37080 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37080 [200]: GET /public/css/style.css
+[Sun May 10 19:43:24 2026] [::1]:37080 Closing
+[Sun May 10 19:43:24 2026] [::1]:37090 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37098 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37090 [200]: GET /public/js/map.js
+[Sun May 10 19:43:24 2026] [::1]:37098 [200]: GET /public/js/app.js
+[Sun May 10 19:43:24 2026] [::1]:37090 Closing
+[Sun May 10 19:43:24 2026] [::1]:37098 Closing
+[Sun May 10 19:43:24 2026] [::1]:37100 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37100 [200]: GET /api/get_session.php
+[Sun May 10 19:43:24 2026] [::1]:37100 Closing
+[Sun May 10 19:43:24 2026] [::1]:37110 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37110 [200]: POST /api/login.php
+[Sun May 10 19:43:24 2026] [::1]:37110 Closing
+[Sun May 10 19:43:24 2026] [::1]:37114 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37114 [200]: GET /api/get_customer_data.php?id=2
+[Sun May 10 19:43:24 2026] [::1]:37114 Closing
+[Sun May 10 19:43:24 2026] [::1]:37130 Accepted
+[Sun May 10 19:43:24 2026] [::1]:37130 [200]: GET /api/get_customers.php
+[Sun May 10 19:43:24 2026] [::1]:37130 Closing
