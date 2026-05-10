@@ -37,8 +37,70 @@ class App {
         this.splitMarkers = [];
 
         this.initMap();
+        this.initModeToggle();
         this.attachEventListeners();
         this.updateFieldList();
+    }
+
+    initModeToggle() {
+        this.modeSwitch = document.getElementById('mode-switch');
+        this.modeLabel = document.getElementById('mode-label');
+
+        // Load preference - default to admin if not set
+        const savedMode = localStorage.getItem('appMode') || 'admin';
+        this.isAdminMode = (savedMode === 'admin');
+
+        this.modeSwitch.checked = this.isAdminMode;
+        this.updateModeUI();
+
+        this.modeSwitch.addEventListener('change', () => {
+            this.isAdminMode = this.modeSwitch.checked;
+            localStorage.setItem('appMode', this.isAdminMode ? 'admin' : 'benutzer');
+            this.updateModeUI();
+        });
+    }
+
+    updateModeUI() {
+        this.modeLabel.textContent = this.isAdminMode ? 'Admin-Modus' : 'Benutzer-Modus';
+
+        // Elements to hide/show
+        const adminElements = [
+            document.querySelector('.customer-tools'),
+            document.querySelector('.customer-tools + hr'),
+            document.getElementById('customer-data-section'),
+            document.getElementById('customer-data-hr')
+        ];
+
+        adminElements.forEach(el => {
+            if (el) {
+                if (this.isAdminMode) {
+                    if (el.id !== 'customer-data-section' && el.id !== 'customer-data-hr') {
+                        el.classList.remove('hidden');
+                    }
+                } else {
+                    el.classList.add('hidden');
+                }
+            }
+        });
+
+        // Specific handling for Kundendaten since it has its own logic
+        if (!this.isAdminMode) {
+            document.getElementById('customer-data-section').classList.add('hidden');
+            document.getElementById('customer-data-hr').classList.add('hidden');
+        } else {
+            // If we have a customer selected, show it
+            if (this.currentCustomerId) {
+                document.getElementById('customer-data-section').classList.remove('hidden');
+                document.getElementById('customer-data-hr').classList.remove('hidden');
+            }
+        }
+
+        this.updateFieldList();
+
+        // Close flightplan sidebar if entering Benutzer mode
+        if (!this.isAdminMode && !this.fpSidebar.classList.contains('hidden')) {
+            this.closeFPSidebar.click();
+        }
     }
 
     initMap() {
@@ -463,8 +525,8 @@ class App {
                 <p>Fläche: ${field.area.toFixed(2)} Ha</p>
                 <div class="actions">
                     <button class="btn secondary action-zoom">Zoom</button>
-                    <button class="btn secondary action-fp">Flugplan</button>
-                    <button class="btn secondary action-kml">KML</button>
+                    ${this.isAdminMode ? '<button class="btn secondary action-fp">Flugplan</button>' : ''}
+                    ${this.isAdminMode ? '<button class="btn secondary action-kml">KML</button>' : ''}
                     <button class="btn secondary action-rename">Umbenennen</button>
                     <button class="btn action-delete">Löschen</button>
                 </div>
@@ -476,14 +538,16 @@ class App {
                     if (cust) this.displayCustomerData(cust);
                 }
             });
-            div.querySelector('.action-fp').addEventListener('click', () => {
-                this.openFlightPlanSidebar(field.id);
-                if (this.currentCustomerId === 'all' && field.customer_id) {
-                    const cust = this.allCustomersData.find(c => String(c.id) === String(field.customer_id));
-                    if (cust) this.displayCustomerData(cust);
-                }
-            });
-            div.querySelector('.action-kml').addEventListener('click', () => this.exportFieldKML(field.id));
+            if (this.isAdminMode) {
+                div.querySelector('.action-fp').addEventListener('click', () => {
+                    this.openFlightPlanSidebar(field.id);
+                    if (this.currentCustomerId === 'all' && field.customer_id) {
+                        const cust = this.allCustomersData.find(c => String(c.id) === String(field.customer_id));
+                        if (cust) this.displayCustomerData(cust);
+                    }
+                });
+                div.querySelector('.action-kml').addEventListener('click', () => this.exportFieldKML(field.id));
+            }
             div.querySelector('.action-rename').addEventListener('click', () => this.editFieldName(field.id));
             div.querySelector('.action-delete').addEventListener('click', () => this.deleteField(field.id));
             this.fieldList.appendChild(div);
@@ -2080,9 +2144,6 @@ class App {
                     }, f.name);
                 });
 
-                this.updateFieldList();
-                this.displayCustomerData(c);
-
                 // Hydrate fields with saved FP parameters if they exist
                 result.fields.forEach(f => {
                     const fieldInApp = this.fields.find(fApp => fApp.name === f.name);
@@ -2107,8 +2168,24 @@ class App {
                         fieldInApp.fp_waypoint_turn_mode = f.fp_waypoint_turn_mode;
                         fieldInApp.fp_waypoint_heading_mode = f.fp_waypoint_heading_mode;
                         fieldInApp.flight_path = f.flight_path;
+
+                        // Draw saved flight plan if it exists
+                        if (f.flight_path) {
+                            try {
+                                const latlngs = JSON.parse(f.flight_path).map(p => L.latLng(p.lat, p.lng, p.alt));
+                                if (latlngs.length > 0) {
+                                    const fpLayer = L.polyline(latlngs, { color: 'red', weight: 2, opacity: 0.7, dashArray: '5, 5' });
+                                    this.mapManager.drawnItems.addLayer(fpLayer);
+                                }
+                            } catch (e) {
+                                console.warn("Failed to parse flight path for field " + f.name, e);
+                            }
+                        }
                     }
                 });
+
+                this.updateFieldList();
+                this.displayCustomerData(c);
 
                 alert(`Daten von ${c.name} geladen.`);
             }
@@ -2152,7 +2229,7 @@ class App {
 
     displayCustomerData(c) {
         document.getElementById('customer-data-section').classList.remove('hidden');
-        document.getElementById('customer-data-section').classList.remove('collapsed'); // Expand when showing data
+        // document.getElementById('customer-data-section').classList.remove('collapsed'); // Should stay collapsed by default
         document.getElementById('customer-data-hr').classList.remove('hidden');
 
         document.getElementById('cd-id').value = c.id;
