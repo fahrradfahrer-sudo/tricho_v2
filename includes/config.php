@@ -12,5 +12,7 @@ define('SMTP_FROM_NAME', 'Schlagverwaltung');
 ini_set('session.cookie_httponly', 1);
 ini_set('session.use_only_cookies', 1);
 ini_set('session.cookie_samesite', 'Lax');
+// Increase session lifetime for "Remember me"
+ini_set('session.gc_maxlifetime', 30 * 24 * 60 * 60);
 // In a real environment with HTTPS, you should also set:
 // ini_set('session.cookie_secure', 1);

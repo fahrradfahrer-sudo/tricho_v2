@@ -12,6 +12,7 @@ $db = include __DIR__ . '/../includes/db.php';
 
 $email = $_POST['email'] ?? '';
 $password = $_POST['password'] ?? '';
+$rememberMe = isset($_POST['remember_me']);
 
 if (empty($email) || empty($password)) {
     echo json_encode(['success' => false, 'message' => 'E-Mail und Passwort sind erforderlich.']);
@@ -27,6 +28,12 @@ try {
         // Secure session regeneration
         session_regenerate_id(true);
         $_SESSION['customer_id'] = $user['id'];
+
+        if ($rememberMe) {
+            // Set a persistent session cookie for 30 days
+            $params = session_get_cookie_params();
+            setcookie(session_name(), session_id(), time() + 30 * 24 * 60 * 60, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
+        }
 
         echo json_encode(['success' => true, 'customerId' => $user['id']]);
     } else {
