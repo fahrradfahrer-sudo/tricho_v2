@@ -106,6 +106,64 @@
                         </div>
                     </div>
                     <hr>
+                    <div id="customer-data-section" class="sidebar-section hidden">
+                        <div class="section-header" id="toggle-customer-data">
+                            <h3>Kundendaten</h3>
+                            <span class="toggle-arrow">▼</span>
+                        </div>
+                        <div id="customer-data-content" class="section-content">
+                            <input type="hidden" id="cd-id">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="cd-first_name">Vorname:</label>
+                                    <input type="text" id="cd-first_name">
+                                </div>
+                                <div class="form-group">
+                                    <label for="cd-name">Nachname:</label>
+                                    <input type="text" id="cd-name">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="cd-company">Firma:</label>
+                                <input type="text" id="cd-company">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group flex-3">
+                                    <label for="cd-street">Straße:</label>
+                                    <input type="text" id="cd-street">
+                                </div>
+                                <div class="form-group flex-1">
+                                    <label for="cd-house_number">Nr.:</label>
+                                    <input type="text" id="cd-house_number">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group flex-1">
+                                    <label for="cd-postal_code">PLZ:</label>
+                                    <input type="text" id="cd-postal_code">
+                                </div>
+                                <div class="form-group flex-3">
+                                    <label for="cd-city">Ort:</label>
+                                    <input type="text" id="cd-city">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="cd-email">E-Mail:</label>
+                                    <input type="email" id="cd-email">
+                                </div>
+                                <div class="form-group">
+                                    <label for="cd-phone">Telefon:</label>
+                                    <input type="tel" id="cd-phone">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="cd-comments">Anmerkungen:</label>
+                                <textarea id="cd-comments" rows="2"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <hr id="customer-data-hr" class="hidden">
                     <h3>Schlagverwaltung</h3>
                     <div class="search-tools">
                         <label for="search-postal-code">Karte zentrieren (PLZ):</label>

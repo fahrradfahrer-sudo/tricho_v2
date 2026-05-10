@@ -92,6 +92,42 @@ body {
 .btn.success { background-color: #28a745; color: white; }
 .btn.small { padding: 5px 10px; font-size: 14px; }
 
+.sidebar-section {
+    margin-bottom: 15px;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    background: #f8f9fa;
+    padding: 5px 10px;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+}
+
+.section-header h3 {
+    margin: 0;
+    font-size: 1.1em;
+}
+
+.toggle-arrow {
+    transition: transform 0.3s ease;
+}
+
+.sidebar-section.collapsed .toggle-arrow {
+    transform: rotate(-90deg);
+}
+
+.sidebar-section.collapsed .section-content {
+    display: none;
+}
+
+.section-content {
+    padding: 10px 5px;
+}
+
 .sidebar select {
     width: 100%;
     padding: 8px;
