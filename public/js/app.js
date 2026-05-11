@@ -56,7 +56,7 @@ class App {
         this.isAdminMode = (savedMode === 'admin');
 
         this.modeSwitch.checked = this.isAdminMode;
-        this.updateModeUI();
+        // this.updateModeUI(); // Removed here, will be called by updateUserUI/checkSession
 
         this.modeSwitch.addEventListener('change', () => {
             this.isAdminMode = this.modeSwitch.checked;
@@ -65,22 +65,28 @@ class App {
         });
     }
 
-    updateModeUI() {
-        if (this.modeLabel) {
-            this.modeLabel.textContent = this.isAdminMode ? 'Admin-Modus' : 'Benutzer-Modus';
-        }
 
+    updateModeUI() {
         const adminToggleContainer = document.getElementById('admin-toggle-container');
         if (this.currentUser && this.currentUser.email === 'mwitt3d@gmail.com') {
             if (adminToggleContainer) adminToggleContainer.classList.remove('hidden');
+            // Use the value from localStorage or default to admin
+            const savedMode = localStorage.getItem('appMode') || 'admin';
+            this.isAdminMode = (savedMode === 'admin');
+            if (this.modeSwitch) this.modeSwitch.checked = this.isAdminMode;
         } else {
             if (adminToggleContainer) adminToggleContainer.classList.add('hidden');
             this.isAdminMode = false;
             if (this.modeSwitch) this.modeSwitch.checked = false;
         }
 
+        if (this.modeLabel) {
+            this.modeLabel.textContent = this.isAdminMode ? 'Admin-Modus' : 'Benutzer-Modus';
+        }
+
         // Elements to hide/show
         const adminElements = [
+            document.getElementById('kundenverwaltung-heading'),
             document.querySelector('.customer-tools'),
             document.querySelector('.customer-tools + hr'),
             document.getElementById('customer-data-section'),
@@ -101,18 +107,6 @@ class App {
                 }
             }
         });
-
-        // Specific handling for Kundendaten since it has its own logic
-        if (!this.isAdminMode) {
-            document.getElementById('customer-data-section').classList.add('hidden');
-            document.getElementById('customer-data-hr').classList.add('hidden');
-        } else {
-            // If we have a customer selected, show it
-            if (this.currentCustomerId) {
-                document.getElementById('customer-data-section').classList.remove('hidden');
-                document.getElementById('customer-data-hr').classList.remove('hidden');
-            }
-        }
 
         this.updateFieldList();
         this.updateFlightPlanVisibility();
@@ -441,6 +435,9 @@ class App {
             if (result.success) {
                 alert(result.message);
                 await this.checkSession();
+                if (this.currentCustomerId) {
+                    await this.loadCustomerData(this.currentCustomerId);
+                }
                 this.switchStep(2);
             } else {
                 alert(result.message);
@@ -460,6 +457,10 @@ class App {
                 this.currentUser = result.customer;
                 this.currentCustomerId = this.currentUser.id;
                 this.updateUserUI();
+                // Automatically load user's fields
+                if (this.currentCustomerId) {
+                    await this.loadCustomerData(this.currentCustomerId);
+                }
             } else {
                 this.currentUser = null;
                 this.currentCustomerId = null;
@@ -2684,6 +2685,7 @@ class App {
         formData.append('customer_postal_code', document.getElementById(sourcePrefix + 'postal_code').value);
         formData.append('customer_city', document.getElementById(sourcePrefix + 'city').value);
         formData.append('customer_email', document.getElementById(sourcePrefix + 'email').value);
+        formData.append('customer_password', document.getElementById(sourcePrefix + 'password').value);
         formData.append('customer_phone', document.getElementById(sourcePrefix + 'phone').value);
         formData.append('customer_comments', document.getElementById(sourcePrefix + 'comments').value);
         formData.append('customer_dsgvo_accepted', document.getElementById('dsgvo').checked ? 1 : 0);
@@ -2736,8 +2738,8 @@ class App {
             });
             const result = await response.json();
             if (result.success) {
-                alert('Antrag erfolgreich abgesendet!');
-                location.reload();
+                alert('Antrag erfolgreich abgesendet! Ihre Daten und Schläge wurden gespeichert.');
+                // location.reload(); // Removed to stay on page
             } else {
                 alert('Fehler: ' + result.message);
             }

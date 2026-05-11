@@ -63,7 +63,7 @@
                         <input type="text" id="company" name="company">
                     </div>
                 </div>
-                <div class="form-row">
+                <div class="form-row register-only">
                     <div class="form-group flex-3">
                         <label for="street">Straße:</label>
                         <input type="text" id="street" name="street">
@@ -73,7 +73,7 @@
                         <input type="text" id="house_number" name="house_number">
                     </div>
                 </div>
-                <div class="form-row">
+                <div class="form-row register-only">
                     <div class="form-group flex-1">
                         <label for="postal_code">PLZ:</label>
                         <input type="text" id="postal_code" name="postal_code">
@@ -126,7 +126,7 @@
                     <div id="toggle-left-sidebar" class="sidebar-toggle left-toggle" title="Sidebar einklappen/ausklappen">
                         <span></span>
                     </div>
-                    <h3>Kundenverwaltung</h3>
+                    <h3 id="kundenverwaltung-heading">Kundenverwaltung</h3>
                     <div class="customer-tools">
                         <select id="customer-select">
                             <option value="">-- Kunde wählen --</option>
@@ -184,6 +184,12 @@
                                     <label for="cd-email">E-Mail:</label>
                                     <input type="email" id="cd-email">
                                 </div>
+                                <div class="form-group">
+                                    <label for="cd-password">Passwort:</label>
+                                    <input type="password" id="cd-password" placeholder="Unverändert lassen">
+                                </div>
+                            </div>
+                            <div class="form-row">
                                 <div class="form-group">
                                     <label for="cd-phone">Telefon:</label>
                                     <input type="tel" id="cd-phone">

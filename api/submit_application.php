@@ -35,21 +35,42 @@ try {
     if (!$isMultiCustomer) {
         if ($customerId) {
             // Update existing customer
-            $stmt = $db->prepare("UPDATE customers SET first_name=?, name=?, company=?, street=?, house_number=?, postal_code=?, city=?, email=?, phone=?, comments=?, dsgvo_accepted=? WHERE id=?");
-            $stmt->execute([
-                $_POST['customer_first_name'] ?? '',
-                $_POST['customer_name'] ?? '',
-                $_POST['customer_company'] ?? '',
-                $_POST['customer_street'] ?? '',
-                $_POST['customer_house_number'] ?? '',
-                $_POST['customer_postal_code'] ?? '',
-                $_POST['customer_city'] ?? '',
-                $_POST['customer_email'] ?? '',
-                $_POST['customer_phone'] ?? '',
-                $_POST['customer_comments'] ?? '',
-                $_POST['customer_dsgvo_accepted'] ?? 0,
-                $customerId
-            ]);
+            $password = $_POST['customer_password'] ?? '';
+            if (!empty($password)) {
+                $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+                $stmt = $db->prepare("UPDATE customers SET first_name=?, name=?, company=?, street=?, house_number=?, postal_code=?, city=?, email=?, password=?, phone=?, comments=?, dsgvo_accepted=? WHERE id=?");
+                $stmt->execute([
+                    $_POST['customer_first_name'] ?? '',
+                    $_POST['customer_name'] ?? '',
+                    $_POST['customer_company'] ?? '',
+                    $_POST['customer_street'] ?? '',
+                    $_POST['customer_house_number'] ?? '',
+                    $_POST['customer_postal_code'] ?? '',
+                    $_POST['customer_city'] ?? '',
+                    $_POST['customer_email'] ?? '',
+                    $passwordHash,
+                    $_POST['customer_phone'] ?? '',
+                    $_POST['customer_comments'] ?? '',
+                    $_POST['customer_dsgvo_accepted'] ?? 0,
+                    $customerId
+                ]);
+            } else {
+                $stmt = $db->prepare("UPDATE customers SET first_name=?, name=?, company=?, street=?, house_number=?, postal_code=?, city=?, email=?, phone=?, comments=?, dsgvo_accepted=? WHERE id=?");
+                $stmt->execute([
+                    $_POST['customer_first_name'] ?? '',
+                    $_POST['customer_name'] ?? '',
+                    $_POST['customer_company'] ?? '',
+                    $_POST['customer_street'] ?? '',
+                    $_POST['customer_house_number'] ?? '',
+                    $_POST['customer_postal_code'] ?? '',
+                    $_POST['customer_city'] ?? '',
+                    $_POST['customer_email'] ?? '',
+                    $_POST['customer_phone'] ?? '',
+                    $_POST['customer_comments'] ?? '',
+                    $_POST['customer_dsgvo_accepted'] ?? 0,
+                    $customerId
+                ]);
+            }
 
             // Delete old fields for this customer to replace them
             $stmtDeleteFields = $db->prepare("DELETE FROM fields WHERE customer_id = ?");
