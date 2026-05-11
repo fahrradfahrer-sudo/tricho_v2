@@ -1,5 +1,6 @@
 <?php
 header('Content-Type: application/json');
+session_start();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
@@ -19,6 +20,17 @@ try {
 
     $isMultiCustomer = isset($_POST['is_multi_customer']) && $_POST['is_multi_customer'] == '1';
     $customerId = $_POST['customer_id'] ?? null;
+
+    // Security check: Only allow updates if logged in as the customer or admin
+    if ($customerId) {
+        $isAdmin = (isset($_SESSION['customer_email']) && $_SESSION['customer_email'] === 'mwitt3d@gmail.com');
+        $isOwnAccount = (isset($_SESSION['customer_id']) && $_SESSION['customer_id'] == $customerId);
+
+        if (!$isAdmin && !$isOwnAccount) {
+            echo json_encode(['success' => false, 'message' => 'Unauthorized to update this customer.']);
+            exit;
+        }
+    }
 
     if (!$isMultiCustomer) {
         if ($customerId) {

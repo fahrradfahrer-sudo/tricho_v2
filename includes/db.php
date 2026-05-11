@@ -21,11 +21,19 @@ try {
         postal_code TEXT,
         city TEXT,
         email TEXT NOT NULL,
+        password TEXT,
         phone TEXT,
         comments TEXT,
         dsgvo_accepted INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
+
+    // Migration: Add password column to customers if it doesn't exist
+    try {
+        $db->exec("ALTER TABLE customers ADD COLUMN password TEXT");
+    } catch (PDOException $e) {
+        // Column might already exist
+    }
 
     // Create fields table
     $db->exec("CREATE TABLE IF NOT EXISTS fields (

@@ -15,12 +15,24 @@
     <div id="app" class="container">
         <div class="header-container">
             <h1>Kundenantrag - Schlagverwaltung</h1>
-            <div class="mode-toggle">
-                <span id="mode-label">Admin-Modus</span>
-                <label class="switch">
-                    <input type="checkbox" id="mode-switch" checked>
-                    <span class="slider round"></span>
-                </label>
+            <div class="header-right">
+                <div id="user-info" class="user-info hidden">
+                    <span id="username-display"></span>
+                    <div class="user-dropdown">
+                        <span class="user-icon">👤</span>
+                        <div class="dropdown-content">
+                            <a href="#" id="link-change-data">Daten ändern</a>
+                            <a href="#" id="link-logout">Abmelden</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="mode-toggle hidden" id="admin-toggle-container">
+                    <span id="mode-label">Admin-Modus</span>
+                    <label class="switch">
+                        <input type="checkbox" id="mode-switch" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
             </div>
         </div>
 
@@ -31,9 +43,13 @@
 
         <!-- Step 1: Personal Data -->
         <div id="step-1" class="step-container">
-            <h2>Persönliche Daten</h2>
+            <h2 id="step-1-title">Persönliche Daten</h2>
+            <div class="auth-toggle">
+                <button type="button" id="btn-show-login" class="btn secondary active">Anmelden</button>
+                <button type="button" id="btn-show-register" class="btn secondary">Benutzerkonto erstellen</button>
+            </div>
             <form id="customer-form">
-                <div class="form-row">
+                <div class="form-row register-only">
                     <div class="form-group">
                         <label for="first_name">Vorname:</label>
                         <input type="text" id="first_name" name="first_name">
@@ -73,15 +89,21 @@
                         <input type="email" id="email" name="email" required>
                     </div>
                     <div class="form-group">
+                        <label for="password">Passwort:</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                </div>
+                <div class="form-row register-only">
+                    <div class="form-group">
                         <label for="phone">Telefon:</label>
                         <input type="tel" id="phone" name="phone">
                     </div>
                 </div>
-                <div class="form-group">
+                <div class="form-group register-only">
                     <label for="comments">Anmerkungen:</label>
                     <textarea id="comments" name="comments" rows="3"></textarea>
                 </div>
-                <div class="form-group checkbox-group">
+                <div class="form-group checkbox-group register-only">
                     <input type="checkbox" id="dsgvo" name="dsgvo" required>
                     <label for="dsgvo">Ich akzeptiere die <a href="https://witt3d.de/datenschutzerklaerung/" target="_blank">Datenschutzbestimmungen (DSGVO)</a>.</label>
                 </div>
@@ -92,7 +114,8 @@
                     <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
                 </div>
 
-                <button type="button" id="btn-next-step" class="btn">Nächster Schritt</button>
+                <button type="button" id="btn-auth-submit" class="btn success">Anmelden</button>
+                <button type="button" id="btn-next-step" class="btn hidden">Nächster Schritt</button>
             </form>
         </div>
 

@@ -12,6 +12,9 @@ class App {
         this.btnSearchPlz = document.getElementById('btn-search-plz');
         this.searchPlzInput = document.getElementById('search-postal-code');
 
+        this.authMode = 'login'; // 'login' or 'register'
+        this.currentUser = null;
+
         this.fpSidebar = document.getElementById('flightplan-sidebar');
         this.closeFPSidebar = document.getElementById('close-fp-sidebar');
         this.btnGenerateFP = document.getElementById('btn-generate-fp');
@@ -41,6 +44,7 @@ class App {
         this.initModeToggle();
         this.attachEventListeners();
         this.updateFieldList();
+        this.checkSession();
     }
 
     initModeToggle() {
@@ -62,7 +66,18 @@ class App {
     }
 
     updateModeUI() {
-        this.modeLabel.textContent = this.isAdminMode ? 'Admin-Modus' : 'Benutzer-Modus';
+        if (this.modeLabel) {
+            this.modeLabel.textContent = this.isAdminMode ? 'Admin-Modus' : 'Benutzer-Modus';
+        }
+
+        const adminToggleContainer = document.getElementById('admin-toggle-container');
+        if (this.currentUser && this.currentUser.email === 'mwitt3d@gmail.com') {
+            if (adminToggleContainer) adminToggleContainer.classList.remove('hidden');
+        } else {
+            if (adminToggleContainer) adminToggleContainer.classList.add('hidden');
+            this.isAdminMode = false;
+            if (this.modeSwitch) this.modeSwitch.checked = false;
+        }
 
         // Elements to hide/show
         const adminElements = [
@@ -75,7 +90,10 @@ class App {
         adminElements.forEach(el => {
             if (el) {
                 if (this.isAdminMode) {
-                    if (el.id !== 'customer-data-section' && el.id !== 'customer-data-hr') {
+                    // Only show section if we actually have a customer selected
+                    if (el.id === 'customer-data-section' || el.id === 'customer-data-hr') {
+                        if (this.currentCustomerId) el.classList.remove('hidden');
+                    } else {
                         el.classList.remove('hidden');
                     }
                 } else {
@@ -195,6 +213,30 @@ class App {
     }
 
     attachEventListeners() {
+        document.getElementById('btn-show-login').addEventListener('click', () => this.switchAuthMode('login'));
+        document.getElementById('btn-show-register').addEventListener('click', () => this.switchAuthMode('register'));
+        document.getElementById('btn-auth-submit').addEventListener('click', () => this.handleAuthSubmit());
+        document.getElementById('link-logout').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.logout();
+        });
+        document.getElementById('link-change-data').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.switchStep(1);
+        });
+
+        const userDropdown = document.querySelector('.user-dropdown');
+        if (userDropdown) {
+            userDropdown.addEventListener('click', (e) => {
+                e.stopPropagation();
+                userDropdown.classList.toggle('active');
+            });
+        }
+
+        document.addEventListener('click', () => {
+            if (userDropdown) userDropdown.classList.remove('active');
+        });
+
         this.btnNextStep.addEventListener('click', () => {
             if (this.validateStep1()) {
                 this.switchStep(2);
@@ -326,7 +368,7 @@ class App {
             return false;
         }
 
-        if (!dsgvo) {
+        if (!this.currentUser && !dsgvo) {
             alert('Bitte akzeptieren Sie die Datenschutzbestimmungen (DSGVO).');
             return false;
         }
@@ -358,6 +400,143 @@ class App {
                 const postalCode = document.getElementById('postal_code').value;
                 this.mapManager.centerMapByPostalCode(postalCode);
             }, 100);
+        }
+    }
+
+    switchAuthMode(mode) {
+        this.authMode = mode;
+        const btnLogin = document.getElementById('btn-show-login');
+        const btnRegister = document.getElementById('btn-show-register');
+        const registerOnly = document.querySelectorAll('.register-only');
+        const btnAuthSubmit = document.getElementById('btn-auth-submit');
+        const step1Title = document.getElementById('step-1-title');
+
+        if (mode === 'login') {
+            btnLogin.classList.add('active');
+            btnRegister.classList.remove('active');
+            registerOnly.forEach(el => el.classList.add('hidden'));
+            btnAuthSubmit.textContent = 'Anmelden';
+            step1Title.textContent = 'Anmelden';
+        } else {
+            btnLogin.classList.remove('active');
+            btnRegister.classList.add('active');
+            registerOnly.forEach(el => el.classList.remove('hidden'));
+            btnAuthSubmit.textContent = 'Registrieren';
+            step1Title.textContent = 'Benutzerkonto erstellen';
+        }
+    }
+
+    async handleAuthSubmit() {
+        const form = document.getElementById('customer-form');
+        const formData = new FormData(form);
+        const url = this.authMode === 'login' ? '../api/login.php' : '../api/register.php';
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                alert(result.message);
+                await this.checkSession();
+                this.switchStep(2);
+            } else {
+                alert(result.message);
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Authentifizierung fehlgeschlagen.');
+        }
+    }
+
+    async checkSession() {
+        try {
+            const response = await fetch('../api/check_session.php');
+            const result = await response.json();
+
+            if (result.logged_in) {
+                this.currentUser = result.customer;
+                this.currentCustomerId = this.currentUser.id;
+                this.updateUserUI();
+            } else {
+                this.currentUser = null;
+                this.currentCustomerId = null;
+                this.updateUserUI();
+            }
+        } catch (err) {
+            console.error('Session check failed', err);
+        }
+    }
+
+    updateUserUI() {
+        const userInfo = document.getElementById('user-info');
+        const usernameDisplay = document.getElementById('username-display');
+        const btnAuthSubmit = document.getElementById('btn-auth-submit');
+        const btnNextStep = document.getElementById('btn-next-step');
+        const authToggle = document.querySelector('.auth-toggle');
+
+        if (this.currentUser) {
+            if (userInfo) userInfo.classList.remove('hidden');
+            if (usernameDisplay) {
+                const username = this.currentUser.email ? this.currentUser.email.split('@')[0] : 'User';
+                usernameDisplay.textContent = username;
+            }
+
+            // Fill Step 1 form (safely)
+            const fields = {
+                'first_name': this.currentUser.first_name,
+                'name': this.currentUser.name,
+                'company': this.currentUser.company,
+                'street': this.currentUser.street,
+                'house_number': this.currentUser.house_number,
+                'postal_code': this.currentUser.postal_code,
+                'city': this.currentUser.city,
+                'email': this.currentUser.email,
+                'phone': this.currentUser.phone,
+                'comments': this.currentUser.comments
+            };
+
+            for (const [id, value] of Object.entries(fields)) {
+                const el = document.getElementById(id);
+                if (el) el.value = value || '';
+            }
+
+            const dsgvo = document.getElementById('dsgvo');
+            if (dsgvo) dsgvo.checked = this.currentUser.dsgvo_accepted == 1;
+
+            if (btnAuthSubmit) btnAuthSubmit.classList.add('hidden');
+            if (btnNextStep) btnNextStep.classList.remove('hidden');
+            if (authToggle) authToggle.classList.add('hidden');
+
+            const step1Title = document.getElementById('step-1-title');
+            if (step1Title) step1Title.textContent = 'Persönliche Daten';
+
+            document.querySelectorAll('.register-only').forEach(el => el.classList.remove('hidden'));
+        } else {
+            if (userInfo) userInfo.classList.add('hidden');
+            if (btnAuthSubmit) btnAuthSubmit.classList.remove('hidden');
+            if (btnNextStep) btnNextStep.classList.add('hidden');
+            if (authToggle) authToggle.classList.remove('hidden');
+            this.switchAuthMode(this.authMode);
+        }
+        this.updateModeUI();
+    }
+
+    async logout() {
+        try {
+            await fetch('../api/logout.php');
+            this.currentUser = null;
+            this.currentCustomerId = null;
+            this.updateUserUI();
+            this.switchStep(1);
+            // Clear map and fields
+            this.mapManager.drawnItems.clearLayers();
+            this.fields = [];
+            this.updateFieldList();
+        } catch (err) {
+            console.error('Logout failed', err);
         }
     }
 
