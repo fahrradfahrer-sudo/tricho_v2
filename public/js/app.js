@@ -45,6 +45,41 @@ class App {
         this.attachEventListeners();
         this.updateFieldList();
         this.checkSession();
+        this.initNotifications();
+    }
+
+    initNotifications() {
+        this.notificationContainer = document.createElement('div');
+        this.notificationContainer.className = 'notification-container';
+        document.body.appendChild(this.notificationContainer);
+    }
+
+    showNotification(message, type = 'info', duration = 5000) {
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+
+        const text = document.createElement('span');
+        text.textContent = message;
+        notification.appendChild(text);
+
+        const okBtn = document.createElement('button');
+        okBtn.textContent = 'OK';
+        okBtn.className = 'notification-ok';
+        okBtn.onclick = () => {
+            notification.remove();
+        };
+        notification.appendChild(okBtn);
+
+        this.notificationContainer.appendChild(notification);
+
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.classList.add('fade-out');
+                notification.addEventListener('animationend', () => {
+                    notification.remove();
+                });
+            }
+        }, duration);
     }
 
     initModeToggle() {
@@ -70,9 +105,17 @@ class App {
         const adminToggleContainer = document.getElementById('admin-toggle-container');
         if (this.currentUser && this.currentUser.email === 'mwitt3d@gmail.com') {
             if (adminToggleContainer) adminToggleContainer.classList.remove('hidden');
-            // Use the value from localStorage or default to admin
-            const savedMode = localStorage.getItem('appMode') || 'admin';
-            this.isAdminMode = (savedMode === 'admin');
+            // Check if we just logged in (sessionStorage flag)
+            const justLoggedIn = sessionStorage.getItem('justLoggedIn');
+            if (justLoggedIn) {
+                this.isAdminMode = true;
+                localStorage.setItem('appMode', 'admin');
+                sessionStorage.removeItem('justLoggedIn');
+            } else {
+                // Use the value from localStorage or default to admin
+                const savedMode = localStorage.getItem('appMode') || 'admin';
+                this.isAdminMode = (savedMode === 'admin');
+            }
             if (this.modeSwitch) this.modeSwitch.checked = this.isAdminMode;
         } else {
             if (adminToggleContainer) adminToggleContainer.classList.add('hidden');
@@ -358,12 +401,12 @@ class App {
         const dsgvo = document.getElementById('dsgvo').checked;
 
         if (!name || !email) {
-            alert('Bitte füllen Sie Nachname und E-Mail aus.');
+            this.showNotification('Bitte füllen Sie Nachname und E-Mail aus.');
             return false;
         }
 
         if (!this.currentUser && !dsgvo) {
-            alert('Bitte akzeptieren Sie die Datenschutzbestimmungen (DSGVO).');
+            this.showNotification('Bitte akzeptieren Sie die Datenschutzbestimmungen (DSGVO).');
             return false;
         }
 
@@ -433,18 +476,19 @@ class App {
             const result = await response.json();
 
             if (result.success) {
-                alert(result.message);
+                this.showNotification(result.message, 'success');
+                sessionStorage.setItem('justLoggedIn', 'true');
                 await this.checkSession();
                 if (this.currentCustomerId) {
                     await this.loadCustomerData(this.currentCustomerId);
                 }
                 this.switchStep(2);
             } else {
-                alert(result.message);
+                this.showNotification(result.message, 'error');
             }
         } catch (err) {
             console.error(err);
-            alert('Authentifizierung fehlgeschlagen.');
+            this.showNotification('Authentifizierung fehlgeschlagen.', 'error');
         }
     }
 
@@ -523,6 +567,81 @@ class App {
             this.switchAuthMode(this.authMode);
         }
         this.updateModeUI();
+    }
+
+    async handleFieldStatusChange(field, type, checked) {
+        field[type] = checked ? 1 : 0;
+
+        // Prepare data for submission
+        const formData = new FormData();
+        const cid = document.getElementById('cd-id').value || this.currentCustomerId;
+        if (!cid || cid === 'all') {
+            this.showNotification('Kunde konnte nicht identifiziert werden.', 'error');
+            return;
+        }
+
+        formData.append('customer_id', cid);
+
+        this.fields.forEach((f, index) => {
+            formData.append(`fields[${index}][customer_id]`, cid);
+            formData.append(`fields[${index}][name]`, f.name);
+            formData.append(`fields[${index}][geometry]`, f.geometry);
+            formData.append(`fields[${index}][area]`, f.area);
+            formData.append(`fields[${index}][is_checked]`, f.is_checked || 0);
+            formData.append(`fields[${index}][is_done]`, f.is_done || 0);
+            if (f.flight_path) formData.append(`fields[${index}][flight_path]`, f.flight_path);
+
+            // Append other necessary FP params to avoid losing them
+            const fpParams = [
+                'fp_path_distance', 'fp_border_distance', 'fp_min_dist', 'fp_orientation',
+                'fp_speed', 'fp_height', 'fp_mode', 'fp_clip_corners', 'fp_terrain_following',
+                'fp_show_wp_height', 'fp_height_mode', 'fp_drone_info', 'fp_finish_action',
+                'fp_rc_lost_action', 'fp_execute_rc_lost_action', 'fp_fly_to_wayline_mode',
+                'fp_takeoff_security_height', 'fp_waypoint_turn_mode', 'fp_waypoint_heading_mode'
+            ];
+            fpParams.forEach(param => {
+                if (f[param] !== undefined && f[param] !== null) formData.append(`fields[${index}][${param}]`, f[param]);
+            });
+        });
+
+        const isStep2 = !this.step2.classList.contains('hidden');
+        const sourcePrefix = isStep2 ? 'cd-' : '';
+        const email = document.getElementById(sourcePrefix + 'email').value;
+        const name = document.getElementById(sourcePrefix + 'name').value;
+
+        if (!email || !name) {
+            this.showNotification('Kundendaten fehlen für Auto-Save.', 'error');
+            return;
+        }
+
+        formData.append('customer_email', email);
+        formData.append('customer_name', name);
+        formData.append('customer_first_name', document.getElementById(sourcePrefix + 'first_name').value);
+        formData.append('customer_company', document.getElementById(sourcePrefix + 'company').value);
+        formData.append('customer_street', document.getElementById(sourcePrefix + 'street').value);
+        formData.append('customer_house_number', document.getElementById(sourcePrefix + 'house_number').value);
+        formData.append('customer_postal_code', document.getElementById(sourcePrefix + 'postal_code').value);
+        formData.append('customer_city', document.getElementById(sourcePrefix + 'city').value);
+        formData.append('customer_phone', document.getElementById(sourcePrefix + 'phone').value);
+        formData.append('customer_comments', document.getElementById(sourcePrefix + 'comments').value);
+        formData.append('customer_dsgvo_accepted', document.getElementById('dsgvo').checked ? 1 : 0);
+        formData.append('website', ''); // Honeypot empty
+
+        try {
+            const response = await fetch('../api/submit_application.php', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            if (result.success) {
+                this.showNotification('Status aktualisiert.', 'success', 2000);
+            } else {
+                this.showNotification('Fehler beim Aktualisieren: ' + result.message, 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            this.showNotification('Verbindungsfehler beim Aktualisieren.', 'error');
+        }
     }
 
     async logout() {
@@ -750,16 +869,25 @@ class App {
             const div = document.createElement('div');
             div.className = 'field-item';
             div.innerHTML = `
-                <h4>${field.name}</h4>
-                <p>Fläche: ${field.area.toFixed(2)} Ha</p>
-                <div class="actions">
-                    <button class="btn secondary action-zoom">Zoom</button>
-                    ${this.isAdminMode ? '<button class="btn secondary action-fp">Flugplan</button>' : ''}
-                    ${this.isAdminMode ? '<button class="btn secondary action-kml">KML</button>' : ''}
-                    <button class="btn secondary action-rename">Umbenennen</button>
-                    <button class="btn action-delete">Löschen</button>
+                <div class="field-info-row">
+                    <span class="field-name" title="${field.name}">${field.name}</span>
+                    <span class="field-area">${field.area.toFixed(2)} ha</span>
+                    <div class="field-status">
+                        ${this.isAdminMode ? `
+                            <input type="checkbox" class="status-checkbox checked-status" ${field.is_checked == 1 ? 'checked' : ''} title="Flugplan geprüft" data-field-id="${field.id}">
+                        ` : ''}
+                        <input type="checkbox" class="status-checkbox done-status" ${field.is_done == 1 ? 'checked' : ''} title="Erledigt" data-field-id="${field.id}" ${this.isAdminMode ? '' : 'disabled'}>
+                    </div>
+                </div>
+                <div class="field-actions-row">
+                    <button class="action-icon action-zoom" title="Zoom">🔍</button>
+                    <button class="action-icon action-fp" title="Flugplan">✈️</button>
+                    <button class="action-icon action-kml" title="KML">KML</button>
+                    <button class="action-icon action-rename" title="Umbenennen">✏️</button>
+                    <button class="action-icon action-delete" title="Löschen">🗑️</button>
                 </div>
             `;
+
             div.querySelector('.action-zoom').addEventListener('click', () => {
                 this.zoomToField(field.id);
                 if (this.currentCustomerId === 'all' && field.customer_id) {
@@ -767,16 +895,30 @@ class App {
                     if (cust) this.displayCustomerData(cust);
                 }
             });
+
+            div.querySelector('.action-fp').addEventListener('click', () => {
+                this.openFlightPlanSidebar(field.id);
+                if (this.currentCustomerId === 'all' && field.customer_id) {
+                    const cust = this.allCustomersData.find(c => String(c.id) === String(field.customer_id));
+                    if (cust) this.displayCustomerData(cust);
+                }
+            });
+            div.querySelector('.action-kml').addEventListener('click', () => this.exportFieldKML(field.id));
+
             if (this.isAdminMode) {
-                div.querySelector('.action-fp').addEventListener('click', () => {
-                    this.openFlightPlanSidebar(field.id);
-                    if (this.currentCustomerId === 'all' && field.customer_id) {
-                        const cust = this.allCustomersData.find(c => String(c.id) === String(field.customer_id));
-                        if (cust) this.displayCustomerData(cust);
-                    }
+                const checkedBox = div.querySelector('.checked-status');
+                checkedBox.addEventListener('change', (e) => {
+                    this.handleFieldStatusChange(field, 'is_checked', e.target.checked);
                 });
-                div.querySelector('.action-kml').addEventListener('click', () => this.exportFieldKML(field.id));
             }
+
+            const doneBox = div.querySelector('.done-status');
+            doneBox.addEventListener('change', (e) => {
+                if (this.isAdminMode) {
+                    this.handleFieldStatusChange(field, 'is_done', e.target.checked);
+                }
+            });
+
             div.querySelector('.action-rename').addEventListener('click', () => this.editFieldName(field.id));
             div.querySelector('.action-delete').addEventListener('click', () => this.deleteField(field.id));
 
@@ -1052,7 +1194,7 @@ class App {
                 const lls = l.getLatLngs();
                 if (idx >= count && idx < count + lls.length) {
                     if (lls.length <= 2) {
-                        alert("Ein Segment muss mindestens 2 Punkte haben.");
+                        this.showNotification("Ein Segment muss mindestens 2 Punkte haben.");
                         return;
                     }
                     lls.splice(idx - count, 1);
@@ -1063,7 +1205,7 @@ class App {
         } else {
             const latlngs = this.currentFlightPath.getLatLngs();
             if (latlngs.length <= 2) {
-                alert("Ein Flugplan muss mindestens 2 Punkte haben.");
+                this.showNotification("Ein Flugplan muss mindestens 2 Punkte haben.");
                 return;
             }
             latlngs.splice(idx, 1);
@@ -1105,7 +1247,7 @@ class App {
 
         if (!virtualBorder) {
             console.error("Virtual border generation failed (null)");
-            alert('Abstand zum Rand ist zu groß für diesen Schlag oder der Schlag ist zu klein.');
+            this.showNotification('Abstand zum Rand ist zu groß für diesen Schlag oder der Schlag ist zu klein.');
             return;
         }
 
@@ -1123,7 +1265,7 @@ class App {
 
         if (!virtualBorder || (virtualBorder.type === 'FeatureCollection' && virtualBorder.features.length === 0)) {
             console.error("Virtual border is empty after intersection");
-            alert('Abstand zum Rand ist zu groß für diesen Schlag oder der Schlag ist zu klein.');
+            this.showNotification('Abstand zum Rand ist zu groß für diesen Schlag oder der Schlag ist zu klein.');
             return;
         }
 
@@ -1215,7 +1357,7 @@ class App {
             }
 
             if (pathPoints.length === 0) {
-                alert('Konnte keinen Flugplan generieren. Prüfen Sie die Parameter (Abstand zum Rand evtl. zu groß).');
+                this.showNotification('Konnte keinen Flugplan generieren. Prüfen Sie die Parameter (Abstand zum Rand evtl. zu groß).');
                 return;
             }
         }
@@ -1241,7 +1383,7 @@ class App {
                     ll.alt = terrainHeight + flightHeight;
                 });
             } catch (err) {
-                alert(err.message);
+                this.showNotification(err.message);
                 this.terrainFollowingCheckbox.checked = false;
             } finally {
                 this.btnGenerateFP.textContent = originalBtnText;
@@ -2029,7 +2171,7 @@ class App {
             URL.revokeObjectURL(url);
         } catch (err) {
             console.error(err);
-            alert("Fehler bei der KMZ-Erstellung: " + err.message);
+            this.showNotification("Fehler bei der KMZ-Erstellung: " + err.message);
         }
     }
 
@@ -2215,7 +2357,7 @@ class App {
                 this.addImportedGeoJson(geoJson);
             } catch (err) {
                 console.error(err);
-                alert('Fehler beim Verarbeiten der SHP-Datei: ' + err.message);
+                this.showNotification('Fehler beim Verarbeiten der SHP-Datei: ' + err.message);
             }
             return;
         }
@@ -2234,11 +2376,11 @@ class App {
                 } else if (extension === 'xml') {
                     this.parseISOXML(e.target.result);
                 } else {
-                    alert('Nicht unterstütztes Dateiformat.');
+                    this.showNotification('Nicht unterstütztes Dateiformat.');
                 }
             } catch (err) {
                 console.error(err);
-                alert('Fehler beim Verarbeiten der Datei: ' + err.message);
+                this.showNotification('Fehler beim Verarbeiten der Datei: ' + err.message);
             }
         };
 
@@ -2364,16 +2506,18 @@ class App {
                         fieldInApp.fp_waypoint_turn_mode = f.fp_waypoint_turn_mode;
                         fieldInApp.fp_waypoint_heading_mode = f.fp_waypoint_heading_mode;
                         fieldInApp.flight_path = f.flight_path;
+                        fieldInApp.is_checked = f.is_checked;
+                        fieldInApp.is_done = f.is_done;
                     }
                 });
 
                 this.updateFieldList();
                 this.hideCustomerDataSection();
-                alert('Alle Kunden und Schläge geladen.');
+                this.showNotification('Alle Kunden und Schläge geladen.');
             }
         } catch (err) {
             console.error(err);
-            alert('Fehler beim Laden aller Daten.');
+            this.showNotification('Fehler beim Laden aller Daten.');
         }
     }
 
@@ -2434,6 +2578,8 @@ class App {
                         fieldInApp.fp_waypoint_turn_mode = f.fp_waypoint_turn_mode;
                         fieldInApp.fp_waypoint_heading_mode = f.fp_waypoint_heading_mode;
                         fieldInApp.flight_path = f.flight_path;
+                        fieldInApp.is_checked = f.is_checked;
+                        fieldInApp.is_done = f.is_done;
 
                         // Draw saved flight plan if it exists
                         if (f.flight_path) {
@@ -2453,11 +2599,11 @@ class App {
                 this.updateFieldList();
                 this.displayCustomerData(c);
 
-                alert(`Daten von ${c.name} geladen.`);
+                this.showNotification(`Daten von ${c.name} geladen.`);
             }
         } catch (err) {
             console.error(err);
-            alert('Fehler beim Laden der Kundendaten.');
+            this.showNotification('Fehler beim Laden der Kundendaten.');
         }
     }
 
@@ -2475,7 +2621,7 @@ class App {
                     this.resetToNewCustomer();
                 }
                 this.refreshCustomerList();
-                alert('Kunde gelöscht.');
+                this.showNotification('Kunde gelöscht.');
             }
         } catch (err) {
             console.error(err);
@@ -2738,14 +2884,14 @@ class App {
             });
             const result = await response.json();
             if (result.success) {
-                alert('Antrag erfolgreich abgesendet! Ihre Daten und Schläge wurden gespeichert.');
+                this.showNotification('Antrag erfolgreich abgesendet! Ihre Daten und Schläge wurden gespeichert.', 'success');
                 // location.reload(); // Removed to stay on page
             } else {
-                alert('Fehler: ' + result.message);
+                this.showNotification('Fehler: ' + result.message, 'error');
             }
         } catch (err) {
             console.error(err);
-            alert('Beim Absenden ist ein Fehler aufgetreten.');
+            this.showNotification('Beim Absenden ist ein Fehler aufgetreten.', 'error');
         }
     }
 
@@ -2846,11 +2992,11 @@ class App {
                 document.getElementById('fp-mode').value = 'smart';
                 this.generateFlightPlan();
             } else {
-                alert("Teilung fehlgeschlagen. Die Linie muss den Schlag komplett schneiden. Gefundene Teile: " + parts.length);
+            this.showNotification("Teilung fehlgeschlagen. Die Linie muss den Schlag komplett schneiden. Gefundene Teile: " + parts.length, 'error');
             }
         } catch (e) {
             console.error("Split failed", e);
-            alert("Fehler bei der Teilung: " + e.message);
+        this.showNotification("Fehler bei der Teilung: " + e.message, 'error');
         }
     }
 }
