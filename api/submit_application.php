@@ -116,8 +116,9 @@ try {
             fp_terrain_following, fp_show_wp_height, fp_height_mode,
             fp_drone_info, fp_finish_action, fp_rc_lost_action,
             fp_execute_rc_lost_action, fp_fly_to_wayline_mode,
-            fp_takeoff_security_height, fp_waypoint_turn_mode, fp_waypoint_heading_mode, flight_path
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            fp_takeoff_security_height, fp_waypoint_turn_mode, fp_waypoint_heading_mode, flight_path,
+            is_checked, is_done
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         foreach ($_POST['fields'] as $field) {
             $fCustomerId = $isMultiCustomer ? ($field['customer_id'] ?? null) : $customerId;
@@ -147,7 +148,9 @@ try {
                 $field['fp_takeoff_security_height'] ?? null,
                 $field['fp_waypoint_turn_mode'] ?? null,
                 $field['fp_waypoint_heading_mode'] ?? null,
-                $field['flight_path'] ?? null
+                $field['flight_path'] ?? null,
+                $field['is_checked'] ?? 0,
+                $field['is_done'] ?? 0
             ]);
         }
     }

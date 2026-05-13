@@ -62,6 +62,8 @@ try {
         fp_waypoint_turn_mode TEXT,
         fp_waypoint_heading_mode TEXT,
         flight_path TEXT, -- JSON string of waypoints
+        is_checked INTEGER DEFAULT 0,
+        is_done INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
     )");
@@ -87,7 +89,9 @@ try {
         'fp_takeoff_security_height' => 'REAL',
         'fp_waypoint_turn_mode' => 'TEXT',
         'fp_waypoint_heading_mode' => 'TEXT',
-        'flight_path' => 'TEXT'
+        'flight_path' => 'TEXT',
+        'is_checked' => 'INTEGER DEFAULT 0',
+        'is_done' => 'INTEGER DEFAULT 0'
     ];
 
     foreach ($columns as $col => $type) {
