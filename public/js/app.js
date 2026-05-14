@@ -212,7 +212,7 @@ class App {
                 fp_rc_lost_action: 'executeLostAction',
                 fp_execute_rc_lost_action: 'goBack',
                 fp_fly_to_wayline_mode: 'safely',
-                fp_takeoff_security_height: 2,
+                fp_takeoff_security_height: 15,
                 fp_waypoint_turn_mode: 'coordinateTurn',
                 fp_waypoint_heading_mode: 'followWayline'
             };
@@ -275,6 +275,7 @@ class App {
         });
 
         this.btnNextStep.addEventListener('click', () => {
+            if (this.currentUser) return; // Handled by onclick override in updateStep1Button
             if (this.validateStep1()) {
                 this.switchStep(2);
             }
@@ -483,6 +484,7 @@ class App {
                     await this.loadCustomerData(this.currentCustomerId);
                 }
                 this.switchStep(2);
+                this.updateStep1Button();
             } else {
                 this.showNotification(result.message, 'error');
             }
@@ -504,7 +506,9 @@ class App {
                 // Automatically load user's fields
                 if (this.currentCustomerId) {
                     await this.loadCustomerData(this.currentCustomerId);
+                    this.switchStep(2);
                 }
+                this.updateStep1Button();
             } else {
                 this.currentUser = null;
                 this.currentCustomerId = null;
@@ -512,6 +516,22 @@ class App {
             }
         } catch (err) {
             console.error('Session check failed', err);
+        }
+    }
+
+    updateStep1Button() {
+        const btnNextStep = document.getElementById('btn-next-step');
+        if (this.currentUser) {
+            btnNextStep.textContent = 'Speichern';
+            btnNextStep.onclick = async () => {
+                if (this.validateStep1()) {
+                    await this.submitApplication();
+                    this.switchStep(2);
+                }
+            };
+        } else {
+            btnNextStep.textContent = 'Nächster Schritt';
+            btnNextStep.onclick = null; // Use original listener
         }
     }
 
@@ -722,7 +742,7 @@ class App {
         };
 
         if (heightSlider) heightSlider.addEventListener('input', (e) => updateHeight(e.target.value, 'slider'));
-        if (heightInput) heightInput.addEventListener('change', (e) => updateHeight(e.target.value, 'input'));
+        if (heightInput) heightInput.addEventListener('input', (e) => updateHeight(e.target.value, 'input'));
 
         document.getElementById('fp-mode').addEventListener('change', (e) => {
             updateActiveFieldParam('fp_mode', e.target.value);
@@ -870,7 +890,7 @@ class App {
             div.className = 'field-item';
             div.innerHTML = `
                 <div class="field-info-row">
-                    <span class="field-name" title="${field.name}">${field.name}</span>
+                    <span class="field-name" title="${field.name}" data-field-id="${field.id}">${field.name}</span>
                     <span class="field-area">${field.area.toFixed(2)} ha</span>
                     <div class="field-status">
                         ${this.isAdminMode ? `
@@ -881,8 +901,10 @@ class App {
                 </div>
                 <div class="field-actions-row">
                     <button class="action-icon action-zoom" title="Zoom">🔍</button>
-                    <button class="action-icon action-fp" title="Flugplan">✈️</button>
-                    <button class="action-icon action-kml" title="KML">KML</button>
+                    ${this.isAdminMode ? `
+                        <button class="action-icon action-fp" title="Flugplan">✈️</button>
+                        <button class="action-icon action-kml" title="KML">KML</button>
+                    ` : ''}
                     <button class="action-icon action-rename" title="Umbenennen">✏️</button>
                     <button class="action-icon action-delete" title="Löschen">🗑️</button>
                 </div>
@@ -896,14 +918,16 @@ class App {
                 }
             });
 
-            div.querySelector('.action-fp').addEventListener('click', () => {
-                this.openFlightPlanSidebar(field.id);
-                if (this.currentCustomerId === 'all' && field.customer_id) {
-                    const cust = this.allCustomersData.find(c => String(c.id) === String(field.customer_id));
-                    if (cust) this.displayCustomerData(cust);
-                }
-            });
-            div.querySelector('.action-kml').addEventListener('click', () => this.exportFieldKML(field.id));
+            if (this.isAdminMode) {
+                div.querySelector('.action-fp').addEventListener('click', () => {
+                    this.openFlightPlanSidebar(field.id);
+                    if (this.currentCustomerId === 'all' && field.customer_id) {
+                        const cust = this.allCustomersData.find(c => String(c.id) === String(field.customer_id));
+                        if (cust) this.displayCustomerData(cust);
+                    }
+                });
+                div.querySelector('.action-kml').addEventListener('click', () => this.exportFieldKML(field.id));
+            }
 
             if (this.isAdminMode) {
                 const checkedBox = div.querySelector('.checked-status');
@@ -1148,7 +1172,7 @@ class App {
                 <td><input type="text" value="${ll.lat.toFixed(6)}" data-idx="${idx}" data-type="lat"></td>
                 <td><input type="text" value="${ll.lng.toFixed(6)}" data-idx="${idx}" data-type="lng"></td>
                 <td><input type="text" value="${absHeight}" data-idx="${idx}" data-type="alt" ${this.terrainFollowingCheckbox.checked ? '' : 'disabled'}></td>
-                <td><button type="button" class="btn secondary small action-delete-wp">Löschen</button></td>
+                <td><button type="button" class="btn secondary action-delete-wp" title="Löschen">×</button></td>
             `;
             tr.querySelector('.action-delete-wp').addEventListener('click', () => this.removeWaypoint(idx));
             this.waypointTableBody.appendChild(tr);
@@ -2250,14 +2274,43 @@ class App {
 
     editFieldName(id) {
         const field = this.fields.find(f => String(f.id) === String(id));
-        if (field) {
-            const newName = prompt('Neuen Schlagnamen eingeben:', field.name);
-            if (newName) {
+        if (!field) return;
+
+        const nameSpan = document.querySelector(`.field-name[data-field-id="${id}"]`);
+        if (!nameSpan) return;
+        const currentName = field.name;
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'field-name-edit-input';
+        input.value = currentName;
+        input.style.width = '120px';
+
+        let isCancelled = false;
+        const save = () => {
+            if (isCancelled) return;
+            const newName = input.value.trim();
+            if (newName && newName !== currentName) {
                 this.saveHistory();
                 field.name = newName;
+            }
+            this.updateFieldList();
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                save();
+            } else if (e.key === 'Escape') {
+                isCancelled = true;
                 this.updateFieldList();
             }
-        }
+        });
+
+        input.addEventListener('blur', save);
+
+        nameSpan.replaceWith(input);
+        input.focus();
+        input.select();
     }
 
     deleteField(id) {
@@ -2788,7 +2841,7 @@ class App {
         document.getElementById('fp-rc-lost-action').value = field.fp_rc_lost_action || 'executeLostAction';
         document.getElementById('fp-execute-rc-lost-action').value = field.fp_execute_rc_lost_action || 'goBack';
         document.getElementById('fp-fly-to-wayline-mode').value = field.fp_fly_to_wayline_mode || 'safely';
-        document.getElementById('fp-takeoff-security-height').value = field.fp_takeoff_security_height || '2';
+        document.getElementById('fp-takeoff-security-height').value = field.fp_takeoff_security_height || field.fp_height || '15';
         document.getElementById('fp-waypoint-turn-mode').value = field.fp_waypoint_turn_mode || 'coordinateTurn';
         document.getElementById('fp-waypoint-heading-mode').value = field.fp_waypoint_heading_mode || 'followWayline';
 
