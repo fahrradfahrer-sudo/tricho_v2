@@ -312,6 +312,17 @@ class App {
             this.resetToNewCustomer();
         });
 
+        document.getElementById('btn-draw-field').addEventListener('click', () => {
+            // Find the Leaflet Draw polygon handler and enable it
+            const drawControl = this.mapManager.map._toolbars.draw;
+            if (drawControl) {
+                const polygonHandler = drawControl._modes.polygon.handler;
+                if (polygonHandler) {
+                    polygonHandler.enable();
+                }
+            }
+        });
+
         this.importFileInput.addEventListener('change', (e) => {
             this.handleImport(e.target.files);
         });
@@ -336,6 +347,9 @@ class App {
 
         this.initFPInputs();
         this.initSidebarLogic();
+
+        // Check for instructional arrow on load
+        this.checkShowDrawArrow();
 
         document.getElementById('toggle-customer-data').addEventListener('click', () => {
             const section = document.getElementById('customer-data-section');
@@ -437,7 +451,50 @@ class App {
                 // Center map based on Step 1 postal code after resize
                 const postalCode = document.getElementById('postal_code').value;
                 this.mapManager.centerMapByPostalCode(postalCode);
+
+                this.checkShowDrawArrow();
             }, 100);
+        }
+    }
+
+    checkShowDrawArrow() {
+        const hasSeenArrow = localStorage.getItem('hasSeenDrawArrow');
+        if (!hasSeenArrow) {
+            const drawBtn = document.querySelector('.leaflet-draw-draw-polygon');
+            if (drawBtn) {
+                const rect = drawBtn.getBoundingClientRect();
+                const arrow = document.createElement('div');
+                arrow.className = 'draw-arrow';
+                arrow.innerHTML = '←'; // Left arrow
+                arrow.style.top = (rect.top + rect.height / 2 - 20) + 'px';
+                arrow.style.left = (rect.right + 15) + 'px';
+                document.body.appendChild(arrow);
+
+                // Add a text tip next to the arrow
+                const tip = document.createElement('div');
+                tip.className = 'draw-tip';
+                tip.textContent = 'Hier Schlag zeichnen';
+                tip.style.position = 'absolute';
+                tip.style.top = (rect.top + rect.height / 2 - 10) + 'px';
+                tip.style.left = (rect.right + 45) + 'px';
+                tip.style.background = '#ffcc00';
+                tip.style.padding = '5px 10px';
+                tip.style.borderRadius = '5px';
+                tip.style.fontWeight = 'bold';
+                tip.style.zIndex = '2000';
+                document.body.appendChild(tip);
+
+                const removeArrow = () => {
+                    arrow.remove();
+                    tip.remove();
+                    localStorage.setItem('hasSeenDrawArrow', 'true');
+                    document.removeEventListener('mousedown', removeArrow);
+                };
+
+                document.addEventListener('mousedown', removeArrow);
+                // Also remove if the draw button is clicked
+                drawBtn.addEventListener('click', removeArrow);
+            }
         }
     }
 
@@ -1298,16 +1355,16 @@ class App {
         let pathPoints = [];
 
         let smartResult = null;
-        if (fpMode === 'smart') {
+        if (fpMode === 'smart' || fpMode === 'smartplus') {
             smartResult = this.calculateSmartPath(virtualBorder, pathDistance, minPointDist, originalPoly);
             pathPoints = smartResult.points;
 
             if (smartResult.orientation === "Smart") {
-                document.getElementById('val-fp-orientation').textContent = "Smart";
+                document.getElementById('val-fp-orientation').textContent = (fpMode === 'smartplus' ? "Smart+" : "Smart");
             } else if (smartResult.orientation !== undefined) {
                 document.getElementById('val-fp-orientation').textContent = Math.round(smartResult.orientation);
             } else {
-                document.getElementById('val-fp-orientation').textContent = "Smart";
+                document.getElementById('val-fp-orientation').textContent = (fpMode === 'smartplus' ? "Smart+" : "Smart");
             }
         } else if (fpMode === 'curved') {
             // Keep existing curved logic but use the new virtual border
@@ -1840,13 +1897,14 @@ class App {
         const pathSpacing = parseFloat(document.getElementById('fp-path-distance').value) || 10;
         const fieldId = document.getElementById('fp-field-id').value;
         const field = this.fields.find(f => String(f.id) === String(fieldId));
+        const fpMode = document.getElementById('fp-mode').value;
 
-        console.log("calculateSmartPath started", { fieldId, hasManualParts: !!(field && field.manualParts) });
+        console.log("calculateSmartPath started", { fieldId, hasManualParts: !!(field && field.manualParts), fpMode });
         if (field && field.manualParts) {
             parts = field.manualParts.map(p => turf.polygon(p.geometry.coordinates));
             console.log("Using manual parts:", parts.length);
         } else {
-            parts = this.decomposePolygon(originalPoly);
+            parts = this.decomposePolygon(originalPoly, 0, fpMode === 'smartplus');
             console.log("Decomposed into parts:", parts.length);
         }
 
@@ -1903,22 +1961,53 @@ class App {
         return { points: allPoints, multiPath: multiPath, orientation: "Smart" };
     }
 
-    decomposePolygon(poly, depth = 0) {
-        if (depth > 5) return [poly];
-        const split = this.findBestSplit(poly);
+    estimateWaypointsFast(poly, pathDistance) {
+        let minPoints = Infinity;
+        // Sample only a few orientations for fast estimation during decomposition
+        for (let angle of [0, 45, 90, 135]) {
+            try {
+                const points = this.calculateZigzagPoints(poly, angle, pathDistance);
+                if (points.length > 0 && points.length < minPoints) {
+                    minPoints = points.length;
+                }
+            } catch (e) {}
+        }
+        return minPoints === Infinity ? 1000 : minPoints;
+    }
+
+    decomposePolygon(poly, depth = 0, smartPlus = false) {
+        if (depth > 8) return [poly];
+
+        const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
+        const currentScore = this.estimateWaypointsFast(poly, pathDistance);
+
+        const split = this.findBestSplit(poly, smartPlus);
         if (split) {
-            return [
-                ...this.decomposePolygon(split[0], depth + 1),
-                ...this.decomposePolygon(split[1], depth + 1)
-            ];
+            let splitScore = 0;
+            for (const part of split) {
+                splitScore += this.estimateWaypointsFast(part, pathDistance);
+            }
+
+            // Only split if it improves efficiency significantly (at least 2%)
+            if (splitScore < currentScore * 0.98) {
+                return [
+                    ...this.decomposePolygon(split[0], depth + 1, smartPlus),
+                    ...this.decomposePolygon(split[1], depth + 1, smartPlus)
+                ];
+            }
         }
         return [poly];
     }
 
-    findBestSplit(poly) {
+    findBestSplit(poly, smartPlus = false) {
         const coords = poly.geometry.coordinates[0];
         const boundary = turf.polygonToLine(poly);
+        const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
 
+        let bestSplit = null;
+        let minScore = Infinity;
+
+        // Identify reflex vertices (concave corners)
         for (let i = 0; i < coords.length - 1; i++) {
             const pPrev = i === 0 ? coords[coords.length - 2] : coords[i - 1];
             const pCurr = coords[i];
@@ -1931,39 +2020,11 @@ class App {
             while (diff < -180) diff += 360;
 
             if (diff > 15) { // Reflex vertex (concave corner) in CCW polygon
-                // Try splitting by connecting to other vertices
-                for (let j = 0; j < coords.length - 1; j++) {
-                    if (Math.abs(i - j) <= 1 || (i === 0 && j === coords.length - 2) || (j === 0 && i === coords.length - 2)) continue;
+                let candidates = [];
 
-                    const pTarget = coords[j];
-                    const splitLine = turf.lineString([pCurr, pTarget]);
-
-                    // Split line must be entirely inside
-                    if (this.isPathInside(pCurr, pTarget, poly, 0.5)) {
-                        try {
-                            const bufferedLine = turf.buffer(splitLine, 0.1, { units: 'meters' });
-                            const remaining = turf.difference(poly, bufferedLine);
-
-                            let parts = [];
-                            if (remaining) {
-                                if (remaining.geometry && remaining.geometry.type === 'MultiPolygon') {
-                                    parts = remaining.geometry.coordinates.map(c => turf.polygon(c));
-                                } else if (remaining.geometry && remaining.geometry.type === 'Polygon') {
-                                    parts = [remaining];
-                                } else if (remaining.type === 'FeatureCollection') {
-                                    parts = remaining.features.filter(f => f.geometry.type === 'Polygon');
-                                } else if (remaining.type === 'MultiPolygon') {
-                                    parts = remaining.coordinates.map(c => turf.polygon(c));
-                                }
-                            }
-
-                            if (parts.length >= 2) return parts;
-                        } catch (e) {}
-                    }
-                }
-
-                // Fallback: Try extending edges
-                const directions = [b1, b2 + 180];
+                // 1. Extensions (prioritized in Smart and exclusively used in Smart+)
+                // b1+180 and b2 extend into the field from the corner
+                const directions = [b1 + 180, b2];
                 for (const angle of directions) {
                     const line = turf.lineString([
                         pCurr,
@@ -1972,37 +2033,68 @@ class App {
                     const intersects = turf.lineIntersect(line, boundary);
                     const sorted = intersects.features
                         .filter(f => turf.distance(f, pCurr, { units: 'meters' }) > 1)
-                        .sort((a, b) => turf.distance(a, pCurr) - turf.distance(b, pCurr));
+                        .sort((a, b) => turf.distance(a, pCurr, { units: 'meters' }) - turf.distance(b, pCurr, { units: 'meters' }));
 
                     if (sorted.length > 0) {
                         const splitPt = sorted[0].geometry.coordinates;
                         if (this.isPathInside(pCurr, splitPt, poly, 0.5)) {
-                            try {
-                                const splitLine = turf.lineString([pCurr, splitPt]);
-                                const bufferedLine = turf.buffer(splitLine, 0.1, { units: 'meters' });
-                                const remaining = turf.difference(poly, bufferedLine);
-
-                                let parts = [];
-                                if (remaining) {
-                                    if (remaining.geometry && remaining.geometry.type === 'MultiPolygon') {
-                                        parts = remaining.geometry.coordinates.map(c => turf.polygon(c));
-                                    } else if (remaining.geometry && remaining.geometry.type === 'Polygon') {
-                                        parts = [remaining];
-                                    } else if (remaining.type === 'FeatureCollection') {
-                                        parts = remaining.features.filter(f => f.geometry.type === 'Polygon');
-                                    } else if (remaining.type === 'MultiPolygon') {
-                                        parts = remaining.coordinates.map(c => turf.polygon(c));
-                                    }
-                                }
-
-                                if (parts.length >= 2) return parts;
-                            } catch (e) {}
+                            candidates.push({ line: [pCurr, splitPt], weight: 0.7 }); // Weight < 1.0 to favor extensions
                         }
+                    }
+                }
+
+                // 2. Vertex connections (disabled in Smart+ to strictly use extensions)
+                if (!smartPlus) {
+                    for (let j = 0; j < coords.length - 1; j++) {
+                        if (Math.abs(i - j) <= 1 || (i === 0 && j === coords.length - 2) || (j === 0 && i === coords.length - 2)) continue;
+                        const pTarget = coords[j];
+                        if (this.isPathInside(pCurr, pTarget, poly, 0.5)) {
+                            candidates.push({ line: [pCurr, pTarget], weight: 1.0 });
+                        }
+                    }
+                }
+
+                for (const cand of candidates) {
+                    try {
+                        const splitLine = turf.lineString(cand.line);
+                        const bufferedLine = turf.buffer(splitLine, 0.05, { units: 'meters' });
+                        const remaining = turf.difference(poly, bufferedLine);
+
+                        let parts = [];
+                        if (remaining) {
+                            if (remaining.geometry && remaining.geometry.type === 'MultiPolygon') {
+                                parts = remaining.geometry.coordinates.map(c => turf.polygon(c));
+                            } else if (remaining.geometry && remaining.geometry.type === 'Polygon') {
+                                parts = [remaining];
+                            } else if (remaining.type === 'FeatureCollection') {
+                                parts = remaining.features.filter(f => f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')).flatMap(f => {
+                                    if (f.geometry.type === 'Polygon') return [f];
+                                    return f.geometry.coordinates.map(c => turf.polygon(c));
+                                });
+                            } else if (remaining.type === 'MultiPolygon') {
+                                parts = remaining.coordinates.map(c => turf.polygon(c));
+                            }
+                        }
+
+                        if (parts.length >= 2) {
+                            let score = 0;
+                            for (const part of parts) {
+                                score += this.estimateWaypointsFast(part, pathDistance);
+                            }
+                            score *= cand.weight;
+
+                            if (score < minScore) {
+                                minScore = score;
+                                bestSplit = parts;
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Split evaluation failed", e);
                     }
                 }
             }
         }
-        return null;
+        return bestSplit;
     }
 
     updateFPStats(speed) {
