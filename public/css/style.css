@@ -633,6 +633,31 @@ hr {
     filter: drop-shadow(0 0 10px #ffcc00);
 }
 
+#waypoint-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+#waypoint-table th, #waypoint-table td {
+    padding: 2px;
+    border: 1px solid #ccc;
+    text-align: center;
+}
+
+#waypoint-table input {
+    width: 100%;
+    padding: 2px;
+    border: none;
+    box-sizing: border-box;
+    font-size: 11px;
+}
+
+#waypoint-table .btn.action-delete-wp {
+    padding: 1px 3px;
+    font-size: 10px;
+}
+
 /* Notifications */
 .notification-container {
     position: fixed;
