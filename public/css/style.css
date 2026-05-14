@@ -225,6 +225,21 @@ input:checked + .slider:before {
 .btn.secondary { background-color: #6c757d; color: white; }
 .btn.success { background-color: #28a745; color: white; }
 .btn.small { padding: 5px 10px; font-size: 14px; }
+.btn.big-btn { width: 100%; padding: 15px; font-size: 18px; font-weight: bold; margin-bottom: 15px; }
+
+.draw-tool-container {
+    margin-bottom: 10px;
+}
+
+.pulse {
+    animation: pulse-animation 2s infinite;
+}
+
+@keyframes pulse-animation {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+    70% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+}
 
 .sidebar-section {
     margin-bottom: 15px;
@@ -631,6 +646,39 @@ hr {
 
 .glow-effect {
     filter: drop-shadow(0 0 10px #ffcc00);
+}
+
+/* Leaflet Draw Icon Styling */
+.leaflet-draw-draw-polygon {
+    background-color: #28a745 !important;
+    background-size: 30px 30px !important;
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 5px !important;
+    border: 2px solid white !important;
+    box-shadow: 0 0 5px rgba(0,0,0,0.3) !important;
+    animation: pulse-animation-green 2s infinite;
+}
+
+@keyframes pulse-animation-green {
+    0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+}
+
+.draw-arrow {
+    position: absolute;
+    z-index: 2000;
+    font-size: 40px;
+    color: #ffcc00;
+    filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.5));
+    pointer-events: none;
+    animation: arrow-bounce 1s infinite alternate;
+}
+
+@keyframes arrow-bounce {
+    from { transform: translateX(0); }
+    to { transform: translateX(10px); }
 }
 
 #waypoint-table {
