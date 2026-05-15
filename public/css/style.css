@@ -650,12 +650,15 @@ hr {
 
 /* Leaflet Draw Icon Styling */
 .leaflet-draw-draw-polygon {
-    background-color: #28a745 !important;
-    background-size: 30px 30px !important;
+    background-color: transparent !important;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2328a745" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 18.2 19.3 5.8 19.3 2 8.5"></polygon></svg>') !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    background-size: 26px 26px !important;
     width: 40px !important;
     height: 40px !important;
     border-radius: 5px !important;
-    border: 2px solid white !important;
+    border: 2px solid #28a745 !important;
     box-shadow: 0 0 5px rgba(0,0,0,0.3) !important;
     animation: pulse-animation-green 2s infinite;
 }
