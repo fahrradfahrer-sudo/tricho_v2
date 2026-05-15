@@ -1359,12 +1359,19 @@ class App {
             smartResult = this.calculateSmartPath(virtualBorder, pathDistance, minPointDist, originalPoly);
             pathPoints = smartResult.points;
 
-            if (smartResult.orientation === "Smart") {
+            if (smartResult && smartResult.orientation === "Smart") {
                 document.getElementById('val-fp-orientation').textContent = (fpMode === 'smartplus' ? "Smart+" : "Smart");
-            } else if (smartResult.orientation !== undefined) {
+            } else if (smartResult && smartResult.orientation !== undefined) {
                 document.getElementById('val-fp-orientation').textContent = Math.round(smartResult.orientation);
             } else {
                 document.getElementById('val-fp-orientation').textContent = (fpMode === 'smartplus' ? "Smart+" : "Smart");
+            }
+
+            if (pathPoints.length === 0) {
+                // Fallback to Intelligent if Smart fails
+                const fallback = this.calculateIntelligentPath(virtualBorder, pathDistance, minPointDist);
+                pathPoints = fallback.points;
+                document.getElementById('val-fp-orientation').textContent = Math.round(fallback.orientation);
             }
         } else if (fpMode === 'curved') {
             // Keep existing curved logic but use the new virtual border
@@ -1981,19 +1988,17 @@ class App {
         const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
         const currentScore = this.estimateWaypointsFast(poly, pathDistance);
 
-        const split = this.findBestSplit(poly, smartPlus);
-        if (split) {
-            let splitScore = 0;
-            for (const part of split) {
-                splitScore += this.estimateWaypointsFast(part, pathDistance);
-            }
+        const splitResult = this.findBestSplit(poly, smartPlus);
+        if (splitResult && splitResult.parts) {
+            const splitScore = splitResult.score;
 
-            // Only split if it improves efficiency significantly (at least 2%)
-            if (splitScore < currentScore * 0.98) {
-                return [
-                    ...this.decomposePolygon(split[0], depth + 1, smartPlus),
-                    ...this.decomposePolygon(split[1], depth + 1, smartPlus)
-                ];
+            // Only split if it improves efficiency significantly (at least 5%)
+            if (splitScore < currentScore * 0.95) {
+                let allSubParts = [];
+                for (const part of splitResult.parts) {
+                    allSubParts = allSubParts.concat(this.decomposePolygon(part, depth + 1, smartPlus));
+                }
+                return allSubParts;
             }
         }
         return [poly];
@@ -2004,7 +2009,7 @@ class App {
         const boundary = turf.polygonToLine(poly);
         const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
 
-        let bestSplit = null;
+        let bestSplitResult = null;
         let minScore = Infinity;
 
         // Identify reflex vertices (concave corners)
@@ -2019,36 +2024,38 @@ class App {
             while (diff > 180) diff -= 360;
             while (diff < -180) diff += 360;
 
-            if (diff > 15) { // Reflex vertex (concave corner) in CCW polygon
+            // In a CCW polygon, a reflex vertex has a turn > 0 (left turn in bearing space)
+            // But Leaflet/Turf might have CW or CCW. We check if the angle is "inward".
+            if (diff > 15 || diff < -195) {
                 let candidates = [];
 
-                // 1. Extensions (prioritized in Smart and exclusively used in Smart+)
+                // 1. Extensions (prioritized)
                 // b1+180 and b2 extend into the field from the corner
                 const directions = [b1 + 180, b2];
                 for (const angle of directions) {
                     const line = turf.lineString([
                         pCurr,
-                        turf.destination(turf.point(pCurr), 2, angle, { units: 'kilometers' }).geometry.coordinates
+                        turf.destination(turf.point(pCurr), 5, angle, { units: 'kilometers' }).geometry.coordinates
                     ]);
                     const intersects = turf.lineIntersect(line, boundary);
                     const sorted = intersects.features
-                        .filter(f => turf.distance(f, pCurr, { units: 'meters' }) > 1)
+                        .filter(f => turf.distance(f, pCurr, { units: 'meters' }) > 0.5)
                         .sort((a, b) => turf.distance(a, pCurr, { units: 'meters' }) - turf.distance(b, pCurr, { units: 'meters' }));
 
                     if (sorted.length > 0) {
                         const splitPt = sorted[0].geometry.coordinates;
-                        if (this.isPathInside(pCurr, splitPt, poly, 0.5)) {
-                            candidates.push({ line: [pCurr, splitPt], weight: 0.7 }); // Weight < 1.0 to favor extensions
+                        if (this.isPathInside(pCurr, splitPt, poly, 0.1)) {
+                            candidates.push({ line: [pCurr, splitPt], weight: 0.8 }); // Favor extensions
                         }
                     }
                 }
 
-                // 2. Vertex connections (disabled in Smart+ to strictly use extensions)
+                // 2. Vertex connections (only for Smart, disabled for Smart+)
                 if (!smartPlus) {
                     for (let j = 0; j < coords.length - 1; j++) {
                         if (Math.abs(i - j) <= 1 || (i === 0 && j === coords.length - 2) || (j === 0 && i === coords.length - 2)) continue;
                         const pTarget = coords[j];
-                        if (this.isPathInside(pCurr, pTarget, poly, 0.5)) {
+                        if (this.isPathInside(pCurr, pTarget, poly, 0.1)) {
                             candidates.push({ line: [pCurr, pTarget], weight: 1.0 });
                         }
                     }
@@ -2057,35 +2064,25 @@ class App {
                 for (const cand of candidates) {
                     try {
                         const splitLine = turf.lineString(cand.line);
-                        const bufferedLine = turf.buffer(splitLine, 0.05, { units: 'meters' });
+                        const bufferedLine = turf.buffer(splitLine, 0.01, { units: 'meters' });
                         const remaining = turf.difference(poly, bufferedLine);
 
                         let parts = [];
                         if (remaining) {
-                            if (remaining.geometry && remaining.geometry.type === 'MultiPolygon') {
-                                parts = remaining.geometry.coordinates.map(c => turf.polygon(c));
-                            } else if (remaining.geometry && remaining.geometry.type === 'Polygon') {
-                                parts = [remaining];
-                            } else if (remaining.type === 'FeatureCollection') {
-                                parts = remaining.features.filter(f => f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')).flatMap(f => {
-                                    if (f.geometry.type === 'Polygon') return [f];
-                                    return f.geometry.coordinates.map(c => turf.polygon(c));
-                                });
-                            } else if (remaining.type === 'MultiPolygon') {
-                                parts = remaining.coordinates.map(c => turf.polygon(c));
-                            }
+                            const flattened = turf.flatten(remaining);
+                            parts = flattened.features.filter(f => f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon'));
                         }
 
                         if (parts.length >= 2) {
-                            let score = 0;
+                            let totalScore = 0;
                             for (const part of parts) {
-                                score += this.estimateWaypointsFast(part, pathDistance);
+                                totalScore += this.estimateWaypointsFast(part, pathDistance);
                             }
-                            score *= cand.weight;
+                            const weightedScore = totalScore * cand.weight;
 
-                            if (score < minScore) {
-                                minScore = score;
-                                bestSplit = parts;
+                            if (weightedScore < minScore) {
+                                minScore = weightedScore;
+                                bestSplitResult = { parts: parts, score: totalScore };
                             }
                         }
                     } catch (e) {
@@ -2094,7 +2091,7 @@ class App {
                 }
             }
         }
-        return bestSplit;
+        return bestSplitResult;
     }
 
     updateFPStats(speed) {
@@ -2494,10 +2491,34 @@ class App {
                 const shpBuffer = await fileMap['shp'].arrayBuffer();
                 const dbfBuffer = fileMap['dbf'] ? await fileMap['dbf'].arrayBuffer() : null;
                 const shxBuffer = fileMap['shx'] ? await fileMap['shx'].arrayBuffer() : null;
+                const prjString = fileMap['prj'] ? await fileMap['prj'].text() : null;
 
                 const shpObj = shp.parseShp(shpBuffer, shxBuffer);
                 const dbfObj = dbfBuffer ? shp.parseDbf(dbfBuffer) : null;
                 const geoJson = await shp.combine([shpObj, dbfObj]);
+
+                if (prjString) {
+                    try {
+                        const fromProj = prjString;
+                        const toProj = 'EPSG:4326'; // WGS84
+
+                        const reprojectCoords = (coords) => {
+                            if (typeof coords[0] === 'number') {
+                                return proj4(fromProj, toProj, coords);
+                            }
+                            return coords.map(reprojectCoords);
+                        };
+
+                        geoJson.features.forEach(feature => {
+                            if (feature.geometry && feature.geometry.coordinates) {
+                                feature.geometry.coordinates = reprojectCoords(feature.geometry.coordinates);
+                            }
+                        });
+                    } catch (projErr) {
+                        console.error('Reprojection failed', projErr);
+                        this.showNotification('Koordinatentransformation fehlgeschlagen. .prj Datei wird evtl. nicht unterstützt.', 'warning');
+                    }
+                }
 
                 this.addImportedGeoJson(geoJson);
             } catch (err) {
