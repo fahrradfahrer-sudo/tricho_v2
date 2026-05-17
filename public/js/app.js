@@ -1970,8 +1970,25 @@ class App {
 
     estimateWaypointsFast(poly, pathDistance) {
         let minPoints = Infinity;
-        // Sample only a few orientations for fast estimation during decomposition
-        for (let angle of [0, 45, 90, 135]) {
+        const angles = new Set();
+        // 5 degree resolution
+        for (let a = 0; a < 180; a += 5) {
+            angles.add(a);
+        }
+        // Edge bearings
+        const geom = poly.geometry || poly;
+        const coords = geom.coordinates[0];
+        if (coords) {
+            for (let i = 0; i < coords.length - 1; i++) {
+                let b = turf.bearing(coords[i], coords[i + 1]);
+                // Normalize to 0-180
+                while (b < 0) b += 180;
+                while (b >= 180) b -= 180;
+                angles.add(Math.round(b));
+            }
+        }
+
+        for (let angle of angles) {
             try {
                 const points = this.calculateZigzagPoints(poly, angle, pathDistance);
                 if (points.length > 0 && points.length < minPoints) {
@@ -1979,7 +1996,7 @@ class App {
                 }
             } catch (e) {}
         }
-        return minPoints === Infinity ? 1000 : minPoints;
+        return minPoints;
     }
 
     decomposePolygon(poly, depth = 0, smartPlus = false) {
@@ -1988,12 +2005,17 @@ class App {
         const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
         const currentScore = this.estimateWaypointsFast(poly, pathDistance);
 
+        // If parent polygon cannot be covered, we must try to split it to find coverable parts
+        // or accept that it might be impossible. However, the goal is full coverage.
         const splitResult = this.findBestSplit(poly, smartPlus);
         if (splitResult && splitResult.parts) {
             const splitScore = splitResult.score;
 
-            // Only split if it improves efficiency significantly (at least 5%)
-            if (splitScore < currentScore * 0.95) {
+            // If currentScore is Infinity (no coverage), any valid split (splitScore < Infinity) is an improvement
+            const isImprovement = (currentScore === Infinity && splitScore < Infinity) ||
+                                 (splitScore < currentScore * 0.95);
+
+            if (isImprovement) {
                 let allSubParts = [];
                 for (const part of splitResult.parts) {
                     allSubParts = allSubParts.concat(this.decomposePolygon(part, depth + 1, smartPlus));
@@ -2005,8 +2027,11 @@ class App {
     }
 
     findBestSplit(poly, smartPlus = false) {
-        const coords = poly.geometry.coordinates[0];
-        const boundary = turf.polygonToLine(poly);
+        // Ensure standard CCW orientation for consistent reflex vertex detection
+        const cleanPoly = turf.rewind(poly);
+        const geom = cleanPoly.geometry || cleanPoly;
+        const coords = geom.coordinates[0];
+        const boundary = turf.polygonToLine(cleanPoly);
         const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
 
         let bestSplitResult = null;
@@ -2024,38 +2049,38 @@ class App {
             while (diff > 180) diff -= 360;
             while (diff < -180) diff += 360;
 
-            // In a CCW polygon, a reflex vertex has a turn > 0 (left turn in bearing space)
-            // But Leaflet/Turf might have CW or CCW. We check if the angle is "inward".
-            if (diff > 15 || diff < -195) {
+            // In a CCW polygon, a reflex vertex has a turn to the Right (positive diff)
+            if (diff > 5) {
                 let candidates = [];
 
-                // 1. Extensions (prioritized)
-                // b1+180 and b2 extend into the field from the corner
-                const directions = [b1 + 180, b2];
+                // 1. Extensions (Continuing adjacent edges)
+                // Extension of (pPrev -> pCurr) into the polygon is direction b1
+                // Extension of (pNext -> pCurr) into the polygon is direction b2 + 180
+                const directions = [b1, (b2 + 180) % 360];
                 for (const angle of directions) {
                     const line = turf.lineString([
                         pCurr,
-                        turf.destination(turf.point(pCurr), 5, angle, { units: 'kilometers' }).geometry.coordinates
+                        turf.destination(turf.point(pCurr), 10, angle, { units: 'kilometers' }).geometry.coordinates
                     ]);
                     const intersects = turf.lineIntersect(line, boundary);
                     const sorted = intersects.features
-                        .filter(f => turf.distance(f, pCurr, { units: 'meters' }) > 0.5)
+                        .filter(f => turf.distance(f, pCurr, { units: 'meters' }) > 0.1)
                         .sort((a, b) => turf.distance(a, pCurr, { units: 'meters' }) - turf.distance(b, pCurr, { units: 'meters' }));
 
                     if (sorted.length > 0) {
                         const splitPt = sorted[0].geometry.coordinates;
-                        if (this.isPathInside(pCurr, splitPt, poly, 0.1)) {
+                        if (this.isPathInside(pCurr, splitPt, cleanPoly, 0.1)) {
                             candidates.push({ line: [pCurr, splitPt], weight: 0.8 }); // Favor extensions
                         }
                     }
                 }
 
-                // 2. Vertex connections (only for Smart, disabled for Smart+)
+                // 2. Vertex connections (fallback, only for Smart)
                 if (!smartPlus) {
                     for (let j = 0; j < coords.length - 1; j++) {
                         if (Math.abs(i - j) <= 1 || (i === 0 && j === coords.length - 2) || (j === 0 && i === coords.length - 2)) continue;
                         const pTarget = coords[j];
-                        if (this.isPathInside(pCurr, pTarget, poly, 0.1)) {
+                        if (this.isPathInside(pCurr, pTarget, cleanPoly, 0.1)) {
                             candidates.push({ line: [pCurr, pTarget], weight: 1.0 });
                         }
                     }
@@ -2065,7 +2090,7 @@ class App {
                     try {
                         const splitLine = turf.lineString(cand.line);
                         const bufferedLine = turf.buffer(splitLine, 0.01, { units: 'meters' });
-                        const remaining = turf.difference(poly, bufferedLine);
+                        const remaining = turf.difference(cleanPoly, bufferedLine);
 
                         let parts = [];
                         if (remaining) {
@@ -2075,14 +2100,22 @@ class App {
 
                         if (parts.length >= 2) {
                             let totalScore = 0;
+                            let allCovered = true;
                             for (const part of parts) {
-                                totalScore += this.estimateWaypointsFast(part, pathDistance);
+                                const partScore = this.estimateWaypointsFast(part, pathDistance);
+                                if (partScore === Infinity) {
+                                    allCovered = false;
+                                    break;
+                                }
+                                totalScore += partScore;
                             }
-                            const weightedScore = totalScore * cand.weight;
 
-                            if (weightedScore < minScore) {
-                                minScore = weightedScore;
-                                bestSplitResult = { parts: parts, score: totalScore };
+                            if (allCovered) {
+                                const weightedScore = totalScore * cand.weight;
+                                if (weightedScore < minScore) {
+                                    minScore = weightedScore;
+                                    bestSplitResult = { parts: parts, score: totalScore };
+                                }
                             }
                         }
                     } catch (e) {
