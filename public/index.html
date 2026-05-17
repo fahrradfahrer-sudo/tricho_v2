@@ -91,6 +91,15 @@
                     <div class="form-group">
                         <label for="password">Passwort:</label>
                         <input type="password" id="password" name="password" required>
+                        <div id="forgot-password-link" class="login-only" style="margin-top: 5px;">
+                            <a href="#" id="link-forgot-password" style="font-size: 0.85em;">Passwort vergessen?</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-row register-only">
+                    <div class="form-group">
+                        <label for="password_confirm">Passwort wiederholen:</label>
+                        <input type="password" id="password_confirm" name="password_confirm">
                     </div>
                 </div>
                 <div class="form-row register-only">
@@ -184,10 +193,6 @@
                                     <label for="cd-email">E-Mail:</label>
                                     <input type="email" id="cd-email">
                                 </div>
-                                <div class="form-group">
-                                    <label for="cd-password">Passwort:</label>
-                                    <input type="password" id="cd-password" placeholder="Unverändert lassen">
-                                </div>
                             </div>
                             <div class="form-row">
                                 <div class="form-group">
@@ -269,6 +274,7 @@
                                 <option value="intelligent">Intelligent</option>
                                 <option value="smart">Smart</option>
                                 <option value="smartplus">Smart+</option>
+                                <option value="genius">Genius</option>
                                 <option value="zigzag">Zickzack</option>
                                 <option value="curved">Kurvig</option>
                             </select>
