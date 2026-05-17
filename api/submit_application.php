@@ -8,6 +8,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $db = include __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/config.php';
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 
 try {
     // Honeypot check
@@ -36,6 +41,13 @@ try {
         if ($customerId) {
             // Update existing customer
             $password = $_POST['customer_password'] ?? '';
+            $passwordConfirm = $_POST['password_confirm'] ?? '';
+
+            if (!empty($password) && $password !== $passwordConfirm) {
+                echo json_encode(['success' => false, 'message' => 'Passwörter stimmen nicht überein.']);
+                exit;
+            }
+
             if (!empty($password)) {
                 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
                 $stmt = $db->prepare("UPDATE customers SET first_name=?, name=?, company=?, street=?, house_number=?, postal_code=?, city=?, email=?, password=?, phone=?, comments=?, dsgvo_accepted=? WHERE id=?");
@@ -171,8 +183,6 @@ try {
 
 /**
  * Sends an email notification to the customer.
- * Note: For real SMTP, it is recommended to use a library like PHPMailer.
- * This implementation uses the PHP mail() function as a starting point.
  */
 function sendEmailNotification($data) {
     $to = $data['customer_email'];
@@ -217,11 +227,29 @@ function sendEmailNotification($data) {
 
     $message .= "\nMit freundlichen Grüßen,\nIhr Team";
 
-    $headers = "From: no-reply@witt3d.de\r\n";
-    $headers .= "Reply-To: no-reply@witt3d.de\r\n";
-    $headers .= "X-Mailer: PHP/" . phpversion();
+    $mail = new PHPMailer(true);
+    try {
+        //Server settings
+        $mail->isSMTP();
+        $mail->Host       = SMTP_HOST;
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = SMTP_SECURE;
+        $mail->Port       = SMTP_PORT;
+        $mail->CharSet    = 'UTF-8';
 
-    // Use mail() - for SMTP configuration, set SMTP and smtp_port in php.ini
-    // or use a library like PHPMailer for more robust SMTP support.
-    @mail($to, $subject, $message, $headers);
+        //Recipients
+        $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+        $mail->addAddress($to, "$firstName $lastName");
+
+        //Content
+        $mail->isHTML(false);
+        $mail->Subject = $subject;
+        $mail->Body    = $message;
+
+        $mail->send();
+    } catch (Exception $e) {
+        error_log("Message could not be sent. Mailer Error: {$mail->ErrorInfo}");
+    }
 }

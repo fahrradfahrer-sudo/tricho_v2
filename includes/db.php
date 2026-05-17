@@ -102,6 +102,13 @@ try {
         }
     }
 
+    // Create password_reset_tokens table
+    $db->exec("CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        email TEXT NOT NULL,
+        token TEXT NOT NULL,
+        expires_at DATETIME NOT NULL
+    )");
+
 } catch (PDOException $e) {
     if (php_sapi_name() !== 'cli') {
         header('Content-Type: application/json');

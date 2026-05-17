@@ -1,0 +1,6 @@
+vendor/
+verify_*.png
+verify_*.py
+*.log
+.DS_Store
+EOF

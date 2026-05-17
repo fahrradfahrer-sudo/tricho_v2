@@ -11,6 +11,7 @@ $db = include __DIR__ . '/../includes/db.php';
 
 $email = $_POST['email'] ?? '';
 $password = $_POST['password'] ?? '';
+$passwordConfirm = $_POST['password_confirm'] ?? '';
 $firstName = $_POST['first_name'] ?? '';
 $name = $_POST['name'] ?? '';
 $company = $_POST['company'] ?? '';
@@ -24,6 +25,11 @@ $dsgvo = isset($_POST['dsgvo']) ? 1 : 0;
 
 if (empty($email) || empty($password) || empty($name)) {
     echo json_encode(['success' => false, 'message' => 'Bitte füllen Sie alle erforderlichen Felder aus (E-Mail, Passwort, Nachname).']);
+    exit;
+}
+
+if ($password !== $passwordConfirm) {
+    echo json_encode(['success' => false, 'message' => 'Passwörter stimmen nicht überein.']);
     exit;
 }
 

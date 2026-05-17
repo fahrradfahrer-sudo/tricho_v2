@@ -261,6 +261,10 @@ class App {
             e.preventDefault();
             this.switchStep(1);
         });
+        document.getElementById('link-forgot-password').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.handleForgotPassword();
+        });
 
         const userDropdown = document.querySelector('.user-dropdown');
         if (userDropdown) {
@@ -420,9 +424,19 @@ class App {
             return false;
         }
 
-        if (!this.currentUser && !dsgvo) {
-            this.showNotification('Bitte akzeptieren Sie die Datenschutzbestimmungen (DSGVO).');
-            return false;
+        if (!this.currentUser) {
+            const password = document.getElementById('password').value;
+            const passwordConfirm = document.getElementById('password_confirm').value;
+
+            if (this.authMode === 'register' && password !== passwordConfirm) {
+                this.showNotification('Passwörter stimmen nicht überein.', 'error');
+                return false;
+            }
+
+            if (!dsgvo) {
+                this.showNotification('Bitte akzeptieren Sie die Datenschutzbestimmungen (DSGVO).');
+                return false;
+            }
         }
 
         return true;
@@ -503,6 +517,7 @@ class App {
         const btnLogin = document.getElementById('btn-show-login');
         const btnRegister = document.getElementById('btn-show-register');
         const registerOnly = document.querySelectorAll('.register-only');
+        const loginOnly = document.querySelectorAll('.login-only');
         const btnAuthSubmit = document.getElementById('btn-auth-submit');
         const step1Title = document.getElementById('step-1-title');
 
@@ -510,20 +525,58 @@ class App {
             btnLogin.classList.add('active');
             btnRegister.classList.remove('active');
             registerOnly.forEach(el => el.classList.add('hidden'));
+            loginOnly.forEach(el => el.classList.remove('hidden'));
             btnAuthSubmit.textContent = 'Anmelden';
             step1Title.textContent = 'Anmelden';
         } else {
             btnLogin.classList.remove('active');
             btnRegister.classList.add('active');
             registerOnly.forEach(el => el.classList.remove('hidden'));
+            loginOnly.forEach(el => el.classList.add('hidden'));
             btnAuthSubmit.textContent = 'Registrieren';
             step1Title.textContent = 'Benutzerkonto erstellen';
+        }
+    }
+
+    async handleForgotPassword() {
+        const email = document.getElementById('email').value;
+        if (!email) {
+            this.showNotification('Bitte geben Sie Ihre E-Mail-Adresse ein.', 'error');
+            return;
+        }
+
+        try {
+            const formData = new FormData();
+            formData.append('email', email);
+            const response = await fetch('../api/forgot_password.php', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            if (result.success) {
+                this.showNotification(result.message, 'success');
+            } else {
+                this.showNotification(result.message, 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            this.showNotification('Fehler beim Senden der Anfrage.', 'error');
         }
     }
 
     async handleAuthSubmit() {
         const form = document.getElementById('customer-form');
         const formData = new FormData(form);
+
+        if (this.authMode === 'register') {
+            const password = document.getElementById('password').value;
+            const passwordConfirm = document.getElementById('password_confirm').value;
+            if (password !== passwordConfirm) {
+                this.showNotification('Passwörter stimmen nicht überein.', 'error');
+                return;
+            }
+        }
+
         const url = this.authMode === 'login' ? '../api/login.php' : '../api/register.php';
 
         try {
@@ -1355,16 +1408,20 @@ class App {
         let pathPoints = [];
 
         let smartResult = null;
-        if (fpMode === 'smart' || fpMode === 'smartplus') {
+        if (fpMode === 'smart' || fpMode === 'smartplus' || fpMode === 'genius') {
             smartResult = this.calculateSmartPath(virtualBorder, pathDistance, minPointDist, originalPoly);
             pathPoints = smartResult.points;
 
             if (smartResult && smartResult.orientation === "Smart") {
-                document.getElementById('val-fp-orientation').textContent = (fpMode === 'smartplus' ? "Smart+" : "Smart");
+                if (fpMode === 'smartplus') document.getElementById('val-fp-orientation').textContent = "Smart+";
+                else if (fpMode === 'genius') document.getElementById('val-fp-orientation').textContent = "Genius";
+                else document.getElementById('val-fp-orientation').textContent = "Smart";
             } else if (smartResult && smartResult.orientation !== undefined) {
                 document.getElementById('val-fp-orientation').textContent = Math.round(smartResult.orientation);
             } else {
-                document.getElementById('val-fp-orientation').textContent = (fpMode === 'smartplus' ? "Smart+" : "Smart");
+                if (fpMode === 'smartplus') document.getElementById('val-fp-orientation').textContent = "Smart+";
+                else if (fpMode === 'genius') document.getElementById('val-fp-orientation').textContent = "Genius";
+                else document.getElementById('val-fp-orientation').textContent = "Smart";
             }
 
             if (pathPoints.length === 0) {
@@ -1479,7 +1536,7 @@ class App {
             }
         }
 
-        if (fpMode === 'smart' && smartResult && smartResult.multiPath && smartResult.multiPath.length > 1) {
+        if ((fpMode === 'smart' || fpMode === 'genius') && smartResult && smartResult.multiPath && smartResult.multiPath.length > 1) {
             const group = L.featureGroup();
             smartResult.multiPath.forEach(path => {
                 L.polyline(path.latlngs, { color: path.color, weight: 3 }).addTo(group);
@@ -1752,6 +1809,7 @@ class App {
 
     // Skip old simplifyPath implementation
     calculateZigzagPoints(virtualBorder, orientation, pathDistance) {
+        const fpMode = document.getElementById('fp-mode').value;
         const center = turf.center(virtualBorder);
         const rotatedVB = turf.transformRotate(virtualBorder, -orientation, { pivot: center });
         const bbox = turf.bbox(rotatedVB);
@@ -1764,7 +1822,7 @@ class App {
         let rows = [];
 
         while (currentY < bbox[3]) {
-            const line = turf.lineString([[bbox[0] - 0.01, currentY], [bbox[2] + 0.01, currentY]]);
+            const line = turf.lineString([[bbox[0] - 100, currentY], [bbox[2] + 100, currentY]]);
             const intersects = turf.lineIntersect(line, rotatedVB);
 
             if (intersects.features.length >= 2) {
@@ -1877,6 +1935,11 @@ class App {
         // Sort candidates by point count (ascending)
         candidates.sort((a, b) => a.pointCount - b.pointCount);
 
+        // If even the best candidate is empty (should not happen if candidates exists)
+        if (candidates.length === 0 || candidates[0].points.length === 0) {
+            return { points: [], orientation: 0 };
+        }
+
         return {
             points: candidates[0].points,
             orientation: candidates[0].orientation
@@ -1911,7 +1974,7 @@ class App {
             parts = field.manualParts.map(p => turf.polygon(p.geometry.coordinates));
             console.log("Using manual parts:", parts.length);
         } else {
-            parts = this.decomposePolygon(originalPoly, 0, fpMode === 'smartplus');
+            parts = this.decomposePolygon(originalPoly, 0, fpMode === 'smartplus' || fpMode === 'genius');
             console.log("Decomposed into parts:", parts.length);
         }
 
@@ -1969,10 +2032,14 @@ class App {
     }
 
     estimateWaypointsFast(poly, pathDistance) {
+        const fpMode = document.getElementById('fp-mode').value;
         let minPoints = Infinity;
         const angles = new Set();
         // 5 degree resolution
-        for (let a = 0; a < 180; a += 5) {
+        let step = 5;
+        if (fpMode === 'genius') step = 2; // Finer resolution for Genius mode
+
+        for (let a = 0; a < 180; a += step) {
             angles.add(a);
         }
         // Edge bearings
@@ -2000,7 +2067,8 @@ class App {
     }
 
     decomposePolygon(poly, depth = 0, smartPlus = false) {
-        if (depth > 8) return [poly];
+        const fpMode = document.getElementById('fp-mode').value;
+        if (depth > 12) return [poly];
 
         const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
         const currentScore = this.estimateWaypointsFast(poly, pathDistance);
@@ -2012,8 +2080,13 @@ class App {
             const splitScore = splitResult.score;
 
             // If currentScore is Infinity (no coverage), any valid split (splitScore < Infinity) is an improvement
-            const isImprovement = (currentScore === Infinity && splitScore < Infinity) ||
+            let isImprovement = (currentScore === Infinity && splitScore < Infinity) ||
                                  (splitScore < currentScore * 0.95);
+
+            // In Genius mode, we prioritize coverage (getting out of Infinity) and more aggressive splitting
+            if (fpMode === 'genius') {
+                isImprovement = (currentScore === Infinity && splitScore < Infinity) || (splitScore < currentScore * 0.98);
+            }
 
             if (isImprovement) {
                 let allSubParts = [];
@@ -2027,6 +2100,7 @@ class App {
     }
 
     findBestSplit(poly, smartPlus = false) {
+        const fpMode = document.getElementById('fp-mode').value;
         // Ensure standard CCW orientation for consistent reflex vertex detection
         const cleanPoly = turf.rewind(poly);
         const geom = cleanPoly.geometry || cleanPoly;
@@ -2075,13 +2149,15 @@ class App {
                     }
                 }
 
-                // 2. Vertex connections (fallback, only for Smart)
-                if (!smartPlus) {
+                // 2. Vertex connections (fallback, only for Smart and Genius)
+                if (!smartPlus || fpMode === 'genius') {
                     for (let j = 0; j < coords.length - 1; j++) {
                         if (Math.abs(i - j) <= 1 || (i === 0 && j === coords.length - 2) || (j === 0 && i === coords.length - 2)) continue;
                         const pTarget = coords[j];
                         if (this.isPathInside(pCurr, pTarget, cleanPoly, 0.1)) {
-                            candidates.push({ line: [pCurr, pTarget], weight: 1.0 });
+                            // In Genius mode, we weight vertex connections same as extensions to explore more options
+                            const weight = (fpMode === 'genius') ? 0.8 : 1.0;
+                            candidates.push({ line: [pCurr, pTarget], weight: weight });
                         }
                     }
                 }
@@ -2977,7 +3053,11 @@ class App {
         setVal('slider-fp-speed', 'fp-speed', 'val-fp-speed', field.fp_speed);
         setVal('slider-fp-height', 'fp-height', 'val-fp-height', field.fp_height);
 
-        document.getElementById('fp-mode').value = field.fp_mode || 'zigzag';
+        if (field.fp_mode === 'smartplus') {
+            document.getElementById('fp-mode').value = 'smartplus';
+        } else {
+            document.getElementById('fp-mode').value = field.fp_mode || 'zigzag';
+        }
         document.getElementById('fp-clip-corners').checked = field.fp_clip_corners == 1;
         document.getElementById('fp-terrain-following').checked = field.fp_terrain_following == 1;
         document.getElementById('fp-show-wp-height').checked = field.fp_show_wp_height == 1;
@@ -3030,7 +3110,12 @@ class App {
         formData.append('customer_postal_code', document.getElementById(sourcePrefix + 'postal_code').value);
         formData.append('customer_city', document.getElementById(sourcePrefix + 'city').value);
         formData.append('customer_email', document.getElementById(sourcePrefix + 'email').value);
-        formData.append('customer_password', document.getElementById(sourcePrefix + 'password').value);
+        if (document.getElementById(sourcePrefix + 'password')) {
+            formData.append('customer_password', document.getElementById(sourcePrefix + 'password').value);
+        }
+        if (document.getElementById(sourcePrefix + 'password_confirm')) {
+            formData.append('password_confirm', document.getElementById(sourcePrefix + 'password_confirm').value);
+        }
         formData.append('customer_phone', document.getElementById(sourcePrefix + 'phone').value);
         formData.append('customer_comments', document.getElementById(sourcePrefix + 'comments').value);
         formData.append('customer_dsgvo_accepted', document.getElementById('dsgvo').checked ? 1 : 0);
