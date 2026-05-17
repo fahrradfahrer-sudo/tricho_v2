@@ -1,0 +1,16 @@
+[Sun May 17 06:53:12 2026] PHP 8.3.6 Development Server (http://localhost:8000) started
+[Sun May 17 06:53:57 2026] [::1]:52288 Accepted
+[Sun May 17 06:53:57 2026] [::1]:52288 [200]: GET /public/index.html
+[Sun May 17 06:53:57 2026] [::1]:52288 Closing
+[Sun May 17 06:53:58 2026] [::1]:52292 Accepted
+[Sun May 17 06:53:58 2026] [::1]:52294 Accepted
+[Sun May 17 06:53:58 2026] [::1]:52304 Accepted
+[Sun May 17 06:53:58 2026] [::1]:52292 [200]: GET /public/css/style.css
+[Sun May 17 06:53:58 2026] [::1]:52292 Closing
+[Sun May 17 06:53:58 2026] [::1]:52294 [200]: GET /public/js/map.js
+[Sun May 17 06:53:58 2026] [::1]:52304 [200]: GET /public/js/app.js
+[Sun May 17 06:53:58 2026] [::1]:52294 Closing
+[Sun May 17 06:53:58 2026] [::1]:52304 Closing
+[Sun May 17 06:53:59 2026] [::1]:52310 Accepted
+[Sun May 17 06:53:59 2026] [::1]:52310 [200]: GET /api/check_session.php
+[Sun May 17 06:53:59 2026] [::1]:52310 Closing
