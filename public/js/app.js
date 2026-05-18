@@ -2085,7 +2085,9 @@ class App {
 
             // In Genius mode, we prioritize coverage (getting out of Infinity) and more aggressive splitting
             if (fpMode === 'genius') {
-                isImprovement = (currentScore === Infinity && splitScore < Infinity) || (splitScore < currentScore * 0.98);
+                // Any split that leads to a finite score when current is Infinity is an improvement.
+                // Otherwise, even a 1% improvement or simply resolving a complex polygon is preferred.
+                isImprovement = (currentScore === Infinity && splitScore < Infinity) || (splitScore < currentScore * 0.99);
             }
 
             if (isImprovement) {
@@ -2177,16 +2179,22 @@ class App {
                         if (parts.length >= 2) {
                             let totalScore = 0;
                             let allCovered = true;
+                            let coverablePartsCount = 0;
                             for (const part of parts) {
                                 const partScore = this.estimateWaypointsFast(part, pathDistance);
                                 if (partScore === Infinity) {
                                     allCovered = false;
-                                    break;
+                                } else {
+                                    totalScore += partScore;
+                                    coverablePartsCount++;
                                 }
-                                totalScore += partScore;
                             }
 
-                            if (allCovered) {
+                            // In Genius mode, we accept the split even if some parts are uncoverable,
+                            // as long as at least one part is coverable and the total score is finite.
+                            const isValidSplit = (fpMode === 'genius') ? (coverablePartsCount > 0) : allCovered;
+
+                            if (isValidSplit) {
                                 const weightedScore = totalScore * cand.weight;
                                 if (weightedScore < minScore) {
                                     minScore = weightedScore;
