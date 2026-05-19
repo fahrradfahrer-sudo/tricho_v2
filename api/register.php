@@ -8,6 +8,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $db = include __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/config.php';
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 
 $email = $_POST['email'] ?? '';
 $password = $_POST['password'] ?? '';
@@ -63,6 +68,38 @@ try {
     $userId = $db->lastInsertId();
     $_SESSION['customer_id'] = $userId;
     $_SESSION['customer_email'] = $email;
+
+    // Send registration confirmation email
+    $subject = "Willkommen bei der Schlagverwaltung - Ihre Registrierung";
+    $message = "Hallo $firstName $name,\n\n";
+    $message .= "Vielen Dank für Ihre Registrierung bei der Schlagverwaltung.\n\n";
+    $message .= "Ihre Zugangsdaten:\n";
+    $message .= "E-Mail: $email\n\n";
+    $message .= "Mit freundlichen Grüßen,\nIhr Team";
+
+    $mail = new PHPMailer(true);
+    try {
+        $mail->isSMTP();
+        $mail->Host       = SMTP_HOST;
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = SMTP_SECURE;
+        $mail->Port       = SMTP_PORT;
+        $mail->CharSet    = 'UTF-8';
+
+        $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+        $mail->addAddress($email, "$firstName $name");
+        $mail->addAddress('feldanmeldung@gmail.com', 'Admin-Kopie');
+
+        $mail->isHTML(false);
+        $mail->Subject = $subject;
+        $mail->Body    = $message;
+
+        $mail->send();
+    } catch (Exception $e) {
+        error_log("Registration email could not be sent. Mailer Error: {$mail->ErrorInfo}");
+    }
 
     echo json_encode(['success' => true, 'message' => 'Registrierung erfolgreich.', 'customer_id' => $userId]);
 

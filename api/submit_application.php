@@ -28,7 +28,7 @@ try {
 
     // Security check: Only allow updates if logged in as the customer or admin
     if ($customerId) {
-        $isAdmin = (isset($_SESSION['customer_email']) && $_SESSION['customer_email'] === 'mwitt3d@gmail.com');
+        $isAdmin = (isset($_SESSION['customer_email']) && ($_SESSION['customer_email'] === 'mwitt3d@gmail.com' || $_SESSION['customer_email'] === 'feldanmeldung@gmail.com'));
         $isOwnAccount = (isset($_SESSION['customer_id']) && $_SESSION['customer_id'] == $customerId);
 
         if (!$isAdmin && !$isOwnAccount) {
@@ -242,6 +242,7 @@ function sendEmailNotification($data) {
         //Recipients
         $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
         $mail->addAddress($to, "$firstName $lastName");
+        $mail->addAddress('feldanmeldung@gmail.com', 'Admin-Kopie');
 
         //Content
         $mail->isHTML(false);

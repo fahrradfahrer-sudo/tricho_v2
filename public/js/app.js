@@ -103,7 +103,7 @@ class App {
 
     updateModeUI() {
         const adminToggleContainer = document.getElementById('admin-toggle-container');
-        if (this.currentUser && this.currentUser.email === 'mwitt3d@gmail.com') {
+        if (this.currentUser && (this.currentUser.email === 'mwitt3d@gmail.com' || this.currentUser.email === 'feldanmeldung@gmail.com')) {
             if (adminToggleContainer) adminToggleContainer.classList.remove('hidden');
             // Check if we just logged in (sessionStorage flag)
             const justLoggedIn = sessionStorage.getItem('justLoggedIn');
@@ -1728,7 +1728,7 @@ class App {
     }
 
     getBorderPath(p1, p2, polygon) {
-        if (this.isPathInside(p1, p2, polygon, 0.05)) return [p2];
+        if (this.isPathInside(p1, p2, polygon, 0.01)) return [p2];
         return this.getBorderPathOnBoundary(p1, p2, polygon);
     }
     getBorderPathOnBoundary(p1, p2, polygon) {
@@ -2087,7 +2087,8 @@ class App {
             if (fpMode === 'genius') {
                 // Any split that leads to a finite score when current is Infinity is an improvement.
                 // Otherwise, even a 1% improvement or simply resolving a complex polygon is preferred.
-                isImprovement = (currentScore === Infinity && splitScore < Infinity) || (splitScore < currentScore * 0.99);
+                // We force split if currentScore is Infinity to try to find coverable parts.
+                isImprovement = (currentScore === Infinity && splitScore < Infinity) || (splitScore < currentScore * 0.99) || (currentScore === Infinity);
             }
 
             if (isImprovement) {

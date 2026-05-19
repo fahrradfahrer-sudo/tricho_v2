@@ -5,7 +5,7 @@ session_start();
 $db = include __DIR__ . '/../includes/db.php';
 
 // Only allow admin (specific email) to get all customers
-if (!isset($_SESSION['customer_id']) || $_SESSION['customer_email'] !== 'mwitt3d@gmail.com') {
+if (!isset($_SESSION['customer_id']) || ($_SESSION['customer_email'] !== 'mwitt3d@gmail.com' && $_SESSION['customer_email'] !== 'feldanmeldung@gmail.com')) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized.']);
     exit;
 }
