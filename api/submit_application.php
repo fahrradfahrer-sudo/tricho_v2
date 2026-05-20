@@ -43,7 +43,7 @@ try {
             $password = $_POST['customer_password'] ?? '';
             $passwordConfirm = $_POST['password_confirm'] ?? '';
 
-            if (!empty($password) && $password !== $passwordConfirm) {
+            if (!empty($password) && !empty($passwordConfirm) && $password !== $passwordConfirm) {
                 echo json_encode(['success' => false, 'message' => 'Passwörter stimmen nicht überein.']);
                 exit;
             }
@@ -88,22 +88,32 @@ try {
             $stmtDeleteFields = $db->prepare("DELETE FROM fields WHERE customer_id = ?");
             $stmtDeleteFields->execute([$customerId]);
         } else {
-        // Insert new customer
-        $stmt = $db->prepare("INSERT INTO customers (first_name, name, company, street, house_number, postal_code, city, email, phone, comments, dsgvo_accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([
-            $_POST['customer_first_name'] ?? '',
-            $_POST['customer_name'] ?? '',
-            $_POST['customer_company'] ?? '',
-            $_POST['customer_street'] ?? '',
-            $_POST['customer_house_number'] ?? '',
-            $_POST['customer_postal_code'] ?? '',
-            $_POST['customer_city'] ?? '',
-            $_POST['customer_email'] ?? '',
-            $_POST['customer_phone'] ?? '',
-            $_POST['customer_comments'] ?? '',
-            $_POST['customer_dsgvo_accepted'] ?? 0
-        ]);
+            // Insert new customer
+            $password = $_POST['customer_password'] ?? '';
+            $passwordHash = !empty($password) ? password_hash($password, PASSWORD_DEFAULT) : null;
+
+            $stmt = $db->prepare("INSERT INTO customers (first_name, name, company, street, house_number, postal_code, city, email, password, phone, comments, dsgvo_accepted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([
+                $_POST['customer_first_name'] ?? '',
+                $_POST['customer_name'] ?? '',
+                $_POST['customer_company'] ?? '',
+                $_POST['customer_street'] ?? '',
+                $_POST['customer_house_number'] ?? '',
+                $_POST['customer_postal_code'] ?? '',
+                $_POST['customer_city'] ?? '',
+                $_POST['customer_email'] ?? '',
+                $passwordHash,
+                $_POST['customer_phone'] ?? '',
+                $_POST['customer_comments'] ?? '',
+                $_POST['customer_dsgvo_accepted'] ?? 0
+            ]);
             $customerId = $db->lastInsertId();
+
+            // Log in the user automatically after creation if they are the one creating it
+            if (!isset($_SESSION['customer_id'])) {
+                $_SESSION['customer_id'] = $customerId;
+                $_SESSION['customer_email'] = $_POST['customer_email'] ?? '';
+            }
         }
     }
 
