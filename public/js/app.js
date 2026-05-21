@@ -1367,7 +1367,7 @@ class App {
 
         const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
         const borderDistance = parseFloat(document.getElementById('fp-border-distance').value) || 5;
-        const minPointDist = parseFloat(document.getElementById('fp-min-dist').value) || 5;
+        const minPointDist = parseFloat(document.getElementById('fp-min-dist').value) || 3;
         let orientation = document.getElementById('fp-orientation').value;
         const speed = parseFloat(document.getElementById('fp-speed').value) || 10;
         const fpMode = document.getElementById('fp-mode').value;
@@ -2028,6 +2028,9 @@ class App {
             }
         });
 
+        const minPointDist = parseFloat(document.getElementById('fp-min-dist').value) || 3;
+        allPoints = this.simplifyPath(allPoints, minPointDist, virtualBorder);
+
         return { points: allPoints, multiPath: multiPath, orientation: "Smart" };
     }
 
@@ -2303,7 +2306,47 @@ class App {
         const terrainFollowing = this.terrainFollowingCheckbox.checked;
         const heightMode = terrainFollowing ? document.getElementById('fp-height-mode').value : 'relativeToStartPoint';
 
-        const latlngs = this.getCurrentFlightPathLatLngs();
+        let latlngs = this.getCurrentFlightPathLatLngs();
+
+        // Filter waypoints to ensure minimum 3m distance
+        if (latlngs.length > 1) {
+            let filtered = [latlngs[0]];
+            for (let i = 1; i < latlngs.length; i++) {
+                const prev = filtered[filtered.length - 1];
+                const curr = latlngs[i];
+                const dist = turf.distance(
+                    turf.point([prev.lng, prev.lat]),
+                    turf.point([curr.lng, curr.lat]),
+                    { units: 'meters' }
+                );
+
+                if (dist >= 3.0) {
+                    filtered.push(curr);
+                } else if (i === latlngs.length - 1 && filtered.length > 1) {
+                    // Always keep the last point. Replace previous if too close.
+                    // But then we must ensure the new last point is 3m from the NEW previous point.
+                    filtered[filtered.length - 1] = curr;
+
+                    // Recursive-like check: if now the last two are too close, remove the second-to-last
+                    while (filtered.length >= 2) {
+                        const pLast = filtered[filtered.length - 1];
+                        const pPrev = filtered[filtered.length - 2];
+                        const d = turf.distance(
+                            turf.point([pPrev.lng, pPrev.lat]),
+                            turf.point([pLast.lng, pLast.lat]),
+                            { units: 'meters' }
+                        );
+                        if (d < 3.0) {
+                            filtered.splice(filtered.length - 2, 1);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            latlngs = filtered;
+        }
+
         const createTime = Date.now();
         const updateTime = createTime;
 
@@ -2346,6 +2389,10 @@ class App {
       </Placemark>`;
         });
 
+        const finishActionTag = finishAction ? `<wpml:finishAction>${finishAction}</wpml:finishAction>` : '<wpml:finishAction/>';
+        const headingModeTag = waypointHeadingMode ? `<wpml:waypointHeadingMode>${waypointHeadingMode}</wpml:waypointHeadingMode>` : '<wpml:waypointHeadingMode/>';
+        const gimbalPitchModeTag = '<wpml:gimbalPitchMode/>'; // Matching example's empty gimbalPitchMode
+
         const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2">
   <Document>
@@ -2355,21 +2402,26 @@ class App {
     <wpml:missionConfig>
       <wpml:droneInfo>
         <wpml:droneEnumValue>${droneEnumValue}</wpml:droneEnumValue>
-        <wpml:droneSubEnumValue>0</wpml:droneSubEnumValue>
+        <wpml:droneSubEnumValue>${droneEnumValue === '77' ? '1' : '0'}</wpml:droneSubEnumValue>
       </wpml:droneInfo>
-      <wpml:finishAction>${finishAction}</wpml:finishAction>
+      <wpml:payloadInfo>
+        <wpml:payloadEnumValue>67</wpml:payloadEnumValue>
+        <wpml:payloadSubEnumValue>0</wpml:payloadSubEnumValue>
+        <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
+      </wpml:payloadInfo>
+      ${finishActionTag}
       <wpml:exitOnRCLost>${exitOnRCLost}</wpml:exitOnRCLost>
       <wpml:executeRCLostAction>${executeRCLostAction}</wpml:executeRCLostAction>
       <wpml:flyToWaylineMode>${flyToWaylineMode}</wpml:flyToWaylineMode>
       <wpml:takeOffSecurityHeight>${takeOffSecurityHeight}</wpml:takeOffSecurityHeight>
-      <wpml:globalTransitionalSpeed>${speed}</wpml:globalTransitionalSpeed>
+      <wpml:globalTransitionalSpeed>0.0</wpml:globalTransitionalSpeed>
     </wpml:missionConfig>
     <Folder>
-      <wpml:globalHeight>${globalHeight}</wpml:globalHeight>
+      <wpml:globalHeight>0.0</wpml:globalHeight>
       <wpml:caliFlightEnable>0</wpml:caliFlightEnable>
-      <wpml:autoFlightSpeed>${speed}</wpml:autoFlightSpeed>
+      <wpml:autoFlightSpeed>0.0</wpml:autoFlightSpeed>
       <wpml:globalWaypointHeadingParam>
-        <wpml:waypointHeadingMode>${waypointHeadingMode}</wpml:waypointHeadingMode>
+        ${headingModeTag}
       </wpml:globalWaypointHeadingParam>
       <wpml:globalWaypointTurnMode>${waypointTurnMode}</wpml:globalWaypointTurnMode>
       <wpml:globalUseStraightLine>1</wpml:globalUseStraightLine>
@@ -2378,7 +2430,7 @@ class App {
         <wpml:heightMode>${heightMode}</wpml:heightMode>
         <wpml:positioningType>GPS</wpml:positioningType>
       </wpml:waylineCoordinateSysParam>
-      <wpml:gimbalPitchMode>manual</wpml:gimbalPitchMode>
+      ${gimbalPitchModeTag}
       <wpml:templateType>waypoint</wpml:templateType>
       <wpml:templateId>0</wpml:templateId>
       ${placemarks}
