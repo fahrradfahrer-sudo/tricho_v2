@@ -2028,7 +2028,6 @@ class App {
             }
         });
 
-        const minPointDist = parseFloat(document.getElementById('fp-min-dist').value) || 3;
         allPoints = this.simplifyPath(allPoints, minPointDist, virtualBorder);
 
         return { points: allPoints, multiPath: multiPath, orientation: "Smart" };
