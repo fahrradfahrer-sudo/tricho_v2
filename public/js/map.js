@@ -163,7 +163,7 @@ class MapManager {
     onFieldEdited(layer) {}
     onFieldDeleted(layer) {}
 
-    addFieldToMap(geoJson, name) {
+    addFieldToMap(geoJson, name, fitBounds = true) {
         const layer = L.geoJSON(geoJson, {
             style: { color: '#3388ff', weight: 3, opacity: 0.5 }
         });
@@ -171,7 +171,9 @@ class MapManager {
             this.drawnItems.addLayer(l);
             this.onFieldAdded(l, name);
         });
-        this.map.fitBounds(this.drawnItems.getBounds());
+        if (fitBounds && this.drawnItems.getLayers().length > 0) {
+            this.map.fitBounds(this.drawnItems.getBounds());
+        }
     }
 
     clearFields() {
