@@ -1,3 +1,4 @@
+node_modules/
 vendor/
 verify_*.png
 verify_*.py

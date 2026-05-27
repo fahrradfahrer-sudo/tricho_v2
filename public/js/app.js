@@ -2708,6 +2708,9 @@ class App {
                 } else if (extension === 'kml') {
                     const kmlLayer = omnivore.kml.parse(e.target.result);
                     this.addImportedGeoJson(kmlLayer.toGeoJSON());
+                } else if (extension === 'geojson' || extension === 'json') {
+                    const geoJson = JSON.parse(e.target.result);
+                    this.addImportedGeoJson(geoJson);
                 } else if (extension === 'xml') {
                     this.parseISOXML(e.target.result);
                 } else {
@@ -2766,11 +2769,21 @@ class App {
 
     addImportedGeoJson(geoJson) {
         const features = geoJson.features || (geoJson.type === 'Feature' ? [geoJson] : []);
+        const importedLayers = [];
         features.forEach(feature => {
             if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
-                this.mapManager.addFieldToMap(feature, feature.properties.name || null);
+                const layer = L.geoJSON(feature);
+                layer.eachLayer(l => {
+                    this.mapManager.drawnItems.addLayer(l);
+                    this.mapManager.onFieldAdded(l, feature.properties.name || feature.properties.Name || null);
+                    importedLayers.push(l);
+                });
             }
         });
+        if (importedLayers.length > 0) {
+            const group = L.featureGroup(importedLayers);
+            this.mapManager.map.fitBounds(group.getBounds());
+        }
     }
 
     async refreshCustomerList() {
