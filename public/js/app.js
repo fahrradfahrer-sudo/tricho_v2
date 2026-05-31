@@ -190,10 +190,16 @@ class App {
 
         this.mapManager.onFieldAdded = (layer, name) => {
             this.saveHistory();
+            let geojson = layer.toGeoJSON();
+            // Strip Z-coordinates
+            if (geojson.geometry && geojson.geometry.coordinates) {
+                const strip = (c) => (typeof c[0] === 'number') ? [c[0], c[1]] : c.map(strip);
+                geojson.geometry.coordinates = strip(geojson.geometry.coordinates);
+            }
             const field = {
                 id: L.stamp(layer),
                 name: name || `Schlag ${this.fields.length + 1}`,
-                geometry: JSON.stringify(layer.toGeoJSON().geometry),
+                geometry: JSON.stringify(geojson.geometry),
                 area: L.GeometryUtil.geodesicArea(layer.getLatLngs()[0]) / 10000, // In Hectares (Ha)
                 // Default FP parameters
                 fp_path_distance: 10,
@@ -1215,7 +1221,8 @@ class App {
                 if (intersect) {
                     const distToOrig = turf.distance(turf.point(pCurr), turf.point(intersect), {units: 'meters'});
                     const maxD = Math.max(d1, d2);
-                    if (clip && distToOrig > maxD * 2.5) {
+                    // Increased spike clipping threshold from 2.5 to 4.0 to prevent over-clipping sharp corners
+                    if (clip && distToOrig > maxD * 4.0) {
                         if (d1 > 0) newRing.push(pCurrOffset1.geometry.coordinates);
                         if (d2 > 0) newRing.push(pCurrOffset2.geometry.coordinates);
                         if (d1 === 0 && d2 === 0) newRing.push(pCurr);
@@ -1259,6 +1266,15 @@ class App {
         return turf.featureCollection(resultPolygons);
     }
     simplifyGeo(geojson, toleranceMeters) {
+        if (!geojson) return geojson;
+        // Strip Z if present
+        if (geojson.type === 'Feature' && geojson.geometry && geojson.geometry.coordinates) {
+            if (geojson.geometry.type === 'Polygon') {
+                geojson.geometry.coordinates = geojson.geometry.coordinates.map(ring => ring.map(c => [c[0], c[1]]));
+            } else if (geojson.geometry.type === 'MultiPolygon') {
+                geojson.geometry.coordinates = geojson.geometry.coordinates.map(poly => poly.map(ring => ring.map(c => [c[0], c[1]])));
+            }
+        }
         const merc = turf.toMercator(geojson);
         const simplified = turf.simplify(merc, { tolerance: toleranceMeters, highQuality: true });
         return turf.toWgs84(simplified);
@@ -1682,11 +1698,14 @@ class App {
     }
 
     isPathInside(p1, p2, polygon, tolerance = 0.05) {
+        // Ensure 2D coordinates for all operations
+        p1 = [p1[0], p1[1]];
+        p2 = [p2[0], p2[1]];
         const line = turf.lineString([p1, p2]);
         const len = turf.length(line, { units: 'meters' });
         if (len < 0.1) return true;
 
-        const features = polygon.type === 'FeatureCollection' ? polygon.features : [polygon];
+        const features = (polygon.type === 'FeatureCollection') ? polygon.features : [polygon];
 
         for (const feature of features) {
             const boundary = turf.polygonToLine(feature);
@@ -1701,7 +1720,8 @@ class App {
             if (significantIntersects.length > 0) return false;
         }
 
-        const numSamples = Math.max(10, Math.min(100, Math.ceil(len / 0.5)));
+        // Increased sampling density for sharp concave corners
+        const numSamples = Math.max(40, Math.min(400, Math.ceil(len / 0.1)));
         for (let i = 0; i <= numSamples; i++) {
             const dist = (i / numSamples) * len;
             const p = turf.along(line, dist, { units: 'meters' });
@@ -1721,14 +1741,14 @@ class App {
                     const distToBorder = turf.distance(p, nearest, { units: 'meters' });
                     if (distToBorder < minBorderDist) minBorderDist = distToBorder;
                 }
-                if (minBorderDist > tolerance) return false;
+                if (minBorderDist > tolerance + 0.005) return false;
             }
         }
         return true;
     }
 
     getBorderPath(p1, p2, polygon) {
-        if (this.isPathInside(p1, p2, polygon, 0.01)) return [p2];
+        if (this.isPathInside(p1, p2, polygon, 0.05)) return [p2];
         return this.getBorderPathOnBoundary(p1, p2, polygon);
     }
     getBorderPathOnBoundary(p1, p2, polygon) {
@@ -1782,7 +1802,7 @@ class App {
         while (current < points.length - 1) {
             let furthestTarget = current + 1;
             for (let target = current + 2; target < points.length; target++) {
-                if (this.isPathInside(simplified[simplified.length - 1], points[target], polygon, 0.1) && this.isCollinear(simplified[simplified.length - 1], points[target - 1], points[target])) {
+                if (this.isPathInside(simplified[simplified.length - 1], points[target], polygon, 0.05) && this.isCollinear(simplified[simplified.length - 1], points[target - 1], points[target])) {
                     furthestTarget = target;
                 } else {
                     break;
@@ -1892,10 +1912,18 @@ class App {
     isSharedEdge(p1, p2, originalBoundary) {
         if (!originalBoundary) return false;
         const mid = turf.midpoint(p1, p2);
-        const nearest = turf.nearestPointOnLine(originalBoundary, mid, { units: 'meters' });
-        const dist = turf.distance(mid, nearest, { units: 'meters' });
-        // If distance to original boundary is significant (>0.1m), it's a shared (internal) edge
-        return dist > 0.1;
+
+        const nearestMid = turf.nearestPointOnLine(originalBoundary, mid, { units: 'meters' });
+        const nearestP1 = turf.nearestPointOnLine(originalBoundary, p1, { units: 'meters' });
+        const nearestP2 = turf.nearestPointOnLine(originalBoundary, p2, { units: 'meters' });
+
+        const distMid = turf.distance(mid, nearestMid, { units: 'meters' });
+        const distP1 = turf.distance(p1, nearestP1, { units: 'meters' });
+        const distP2 = turf.distance(p2, nearestP2, { units: 'meters' });
+
+        // If distance to original boundary is significant (>0.25m) at all checked points, it's a shared (internal) edge
+        // Using a slightly larger threshold to account for numeric drift during decomposition
+        return distMid > 0.25 && distP1 > 0.25 && distP2 > 0.25;
     }
 
     calculateIntelligentPath(virtualBorder, pathDistance, minPointDist) {
@@ -1989,20 +2017,40 @@ class App {
         const clipCorners = document.getElementById('fp-clip-corners').checked;
 
         const originalBoundary = turf.polygonToLine(originalPoly);
+        console.log("Original boundary type:", originalBoundary.geometry.type);
         parts.forEach((part, idx) => {
+            console.log(`Processing part ${idx}`);
             let partVirtualBorder = this.getMiteredOffset(part, borderDistance, clipCorners, originalBoundary, pathSpacing);
-            if (!partVirtualBorder) return;
+
+            // Fallback: If offset fails at borderDistance, try a smaller offset
+            if (!partVirtualBorder && borderDistance > 1) {
+                console.log(`Part ${idx}: getMiteredOffset failed at ${borderDistance}m, trying 1m fallback`);
+                partVirtualBorder = this.getMiteredOffset(part, 1, clipCorners, originalBoundary, pathSpacing);
+            }
+
+            if (!partVirtualBorder) {
+                console.log(`Part ${idx}: getMiteredOffset failed`);
+                return;
+            }
 
             try {
-                partVirtualBorder = turf.intersect(partVirtualBorder, part);
+                const intersectResult = turf.intersect(partVirtualBorder, part);
+                if (!intersectResult) {
+                    console.log(`Part ${idx}: turf.intersect returned null`);
+                }
+                partVirtualBorder = intersectResult;
             } catch (e) {
                 console.warn("Part intersection failed", e);
             }
 
-            if (!partVirtualBorder || (partVirtualBorder.type === 'FeatureCollection' && partVirtualBorder.features.length === 0)) return;
+            if (!partVirtualBorder || (partVirtualBorder.type === 'FeatureCollection' && partVirtualBorder.features.length === 0)) {
+                console.log(`Part ${idx}: virtual border empty after intersection`);
+                return;
+            }
 
             partVirtualBorder = this.simplifyGeo(partVirtualBorder, 0.1);
             const result = this.calculateIntelligentPath(partVirtualBorder, pathDistance, minPointDist);
+            console.log(`Part ${idx}: Intelligent path generated ${result.points.length} points`);
 
             if (result.points.length > 0) {
                 const partColor = this.colors[idx % this.colors.length];
@@ -2014,6 +2062,7 @@ class App {
                     const firstPt = result.points[0];
                     // Connect using the virtual border to respect safe distance
                     const connection = this.getBorderPath(lastPt, firstPt, virtualBorder);
+                    console.log(`Part ${idx}: Connection added ${connection.length} points`);
                     connection.forEach(p => {
                         if (turf.distance(allPoints[allPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                             allPoints.push(p);
@@ -2029,6 +2078,11 @@ class App {
         });
 
         allPoints = this.simplifyPath(allPoints, minPointDist, virtualBorder);
+
+        if (fpMode === 'genius') {
+            console.log("Applying final simplified pass for Genius mode");
+            allPoints = this.simplifyPath(allPoints, minPointDist, virtualBorder);
+        }
 
         return { points: allPoints, multiPath: multiPath, orientation: "Smart" };
     }
@@ -2070,7 +2124,13 @@ class App {
 
     decomposePolygon(poly, depth = 0, smartPlus = false) {
         const fpMode = document.getElementById('fp-mode').value;
-        if (depth > 12) return [poly];
+        if (depth > 15) return [poly];
+
+        // Ensure 2D coordinates
+        if (poly.geometry && poly.geometry.coordinates) {
+            const strip = (c) => (typeof c[0] === 'number') ? [c[0], c[1]] : c.map(strip);
+            poly.geometry.coordinates = strip(poly.geometry.coordinates);
+        }
 
         const pathDistance = parseFloat(document.getElementById('fp-path-distance').value) || 10;
         const currentScore = this.estimateWaypointsFast(poly, pathDistance);
@@ -2090,10 +2150,11 @@ class App {
                 // Any split that leads to a finite score when current is Infinity is an improvement.
                 // Otherwise, even a 1% improvement or simply resolving a complex polygon is preferred.
                 // We force split if currentScore is Infinity to try to find coverable parts.
-                isImprovement = (currentScore === Infinity && splitScore < Infinity) || (splitScore < currentScore * 0.99) || (currentScore === Infinity);
+                isImprovement = (currentScore === Infinity && splitScore < Infinity) || (splitScore < currentScore * 0.995) || (currentScore === Infinity);
             }
 
             if (isImprovement) {
+                console.log(`Decomposition improvement found at depth ${depth}. Splitting into ${splitResult.parts.length} parts.`);
                 let allSubParts = [];
                 for (const part of splitResult.parts) {
                     allSubParts = allSubParts.concat(this.decomposePolygon(part, depth + 1, smartPlus));
@@ -2148,8 +2209,12 @@ class App {
 
                     if (sorted.length > 0) {
                         const splitPt = sorted[0].geometry.coordinates;
-                        if (this.isPathInside(pCurr, splitPt, cleanPoly, 0.1)) {
-                            candidates.push({ line: [pCurr, splitPt], weight: 0.8 }); // Favor extensions
+                        if (this.isPathInside(pCurr, splitPt, cleanPoly, 0.15)) {
+                            // Extend split line slightly to ensure clean intersection during difference operation
+                            const bearing = turf.bearing(pCurr, splitPt);
+                            const extStart = turf.destination(turf.point(pCurr), 0.001, bearing + 180, { units: 'kilometers' }).geometry.coordinates;
+                            const extEnd = turf.destination(turf.point(splitPt), 0.001, bearing, { units: 'kilometers' }).geometry.coordinates;
+                            candidates.push({ line: [extStart, extEnd], weight: 0.8 });
                         }
                     }
                 }
@@ -2159,7 +2224,7 @@ class App {
                     for (let j = 0; j < coords.length - 1; j++) {
                         if (Math.abs(i - j) <= 1 || (i === 0 && j === coords.length - 2) || (j === 0 && i === coords.length - 2)) continue;
                         const pTarget = coords[j];
-                        if (this.isPathInside(pCurr, pTarget, cleanPoly, 0.1)) {
+                        if (this.isPathInside(pCurr, pTarget, cleanPoly, 0.15)) {
                             // In Genius mode, we weight vertex connections same as extensions to explore more options
                             const weight = (fpMode === 'genius') ? 0.8 : 1.0;
                             candidates.push({ line: [pCurr, pTarget], weight: weight });
@@ -2771,11 +2836,25 @@ class App {
         const features = geoJson.features || (geoJson.type === 'Feature' ? [geoJson] : []);
         const importedLayers = [];
         features.forEach(feature => {
-            if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
-                const layer = L.geoJSON(feature);
+            if (feature.geometry && (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon')) {
+                // Strip Z-coordinates
+                const strip = (c) => (typeof c[0] === 'number') ? [c[0], c[1]] : c.map(strip);
+                feature.geometry.coordinates = strip(feature.geometry.coordinates);
+
+                // Create a clean 2D GeoJSON feature
+                const cleanFeature = {
+                    type: 'Feature',
+                    properties: feature.properties || {},
+                    geometry: {
+                        type: feature.geometry.type,
+                        coordinates: feature.geometry.coordinates
+                    }
+                };
+
+                const layer = L.geoJSON(cleanFeature);
                 layer.eachLayer(l => {
                     this.mapManager.drawnItems.addLayer(l);
-                    this.mapManager.onFieldAdded(l, feature.properties.name || feature.properties.Name || null);
+                    this.mapManager.onFieldAdded(l, cleanFeature.properties.name || cleanFeature.properties.Name || null);
                     importedLayers.push(l);
                 });
             }
