@@ -48,6 +48,39 @@ class App {
         this.initNotifications();
     }
 
+    colorToHex(color) {
+        const colors = {
+            'red': '#ff0000',
+            'blue': '#0000ff',
+            'green': '#008000',
+            'orange': '#ffa500',
+            'purple': '#800080',
+            'cyan': '#00ffff'
+        };
+        return colors[color] || color;
+    }
+
+    interpolateColor(color1, color2, factor = 0.5) {
+        const hex = (x) => {
+            const h = Math.round(x).toString(16);
+            return h.length === 1 ? '0' + h : h;
+        };
+
+        const r1 = parseInt(this.colorToHex(color1).substring(1, 3), 16);
+        const g1 = parseInt(this.colorToHex(color1).substring(3, 5), 16);
+        const b1 = parseInt(this.colorToHex(color1).substring(5, 7), 16);
+
+        const r2 = parseInt(this.colorToHex(color2).substring(1, 3), 16);
+        const g2 = parseInt(this.colorToHex(color2).substring(3, 5), 16);
+        const b2 = parseInt(this.colorToHex(color2).substring(5, 7), 16);
+
+        const r = r1 + factor * (r2 - r1);
+        const g = g1 + factor * (g2 - g1);
+        const b = b1 + factor * (b2 - b1);
+
+        return `#${hex(r)}${hex(g)}${hex(b)}`;
+    }
+
     initNotifications() {
         this.notificationContainer = document.createElement('div');
         this.notificationContainer.className = 'notification-container';
@@ -1312,17 +1345,31 @@ class App {
                 if (isNaN(val)) return;
 
                 if (this.currentFlightPath instanceof L.FeatureGroup) {
-                    let count = 0;
-                    this.currentFlightPath.eachLayer(l => {
+                    const layers = [];
+                    this.currentFlightPath.eachLayer(l => layers.push(l));
+                    layers.sort((a, b) => a.segmentIndex - b.segmentIndex);
+
+                    let currentGlobalIdx = 0;
+                    layers.forEach((l, i) => {
                         const lls = l.getLatLngs();
-                        if (idx >= count && idx < count + lls.length) {
-                            const subIdx = idx - count;
-                            if (type === 'lat') lls[subIdx].lat = val;
-                            else if (type === 'lng') lls[subIdx].lng = val;
-                            else if (type === 'alt') lls[subIdx].alt = val;
-                            l.setLatLngs(lls);
+                        let layerUpdated = false;
+                        for (let j = 0; j < lls.length; j++) {
+                            let pointGlobalIdx;
+                            if (i > 0 && j === 0) {
+                                pointGlobalIdx = currentGlobalIdx - 1;
+                            } else {
+                                pointGlobalIdx = currentGlobalIdx;
+                                currentGlobalIdx++;
+                            }
+
+                            if (pointGlobalIdx === idx) {
+                                if (type === 'lat') lls[j].lat = val;
+                                else if (type === 'lng') lls[j].lng = val;
+                                else if (type === 'alt') lls[j].alt = val;
+                                layerUpdated = true;
+                            }
                         }
-                        count += lls.length;
+                        if (layerUpdated) l.setLatLngs(lls);
                     });
                 } else {
                     const currentLatLngs = this.currentFlightPath.getLatLngs();
@@ -1339,19 +1386,41 @@ class App {
 
     removeWaypoint(idx) {
         if (this.currentFlightPath instanceof L.FeatureGroup) {
-            let count = 0;
-            this.currentFlightPath.eachLayer(l => {
+            const layers = [];
+            this.currentFlightPath.eachLayer(l => layers.push(l));
+            layers.sort((a, b) => a.segmentIndex - b.segmentIndex);
+
+            let currentGlobalIdx = 0;
+            let removedAny = false;
+            layers.forEach((l, i) => {
                 const lls = l.getLatLngs();
-                if (idx >= count && idx < count + lls.length) {
-                    if (lls.length <= 2) {
-                        this.showNotification("Ein Segment muss mindestens 2 Punkte haben.");
-                        return;
+                let layerUpdated = false;
+                for (let j = 0; j < lls.length; j++) {
+                    let pointGlobalIdx;
+                    if (i > 0 && j === 0) {
+                        pointGlobalIdx = currentGlobalIdx - 1;
+                    } else {
+                        pointGlobalIdx = currentGlobalIdx;
+                        currentGlobalIdx++;
                     }
-                    lls.splice(idx - count, 1);
-                    l.setLatLngs(lls);
+
+                    if (pointGlobalIdx === idx) {
+                        if (lls.length <= 2) {
+                            console.warn("Cannot remove point from segment with only 2 points");
+                            continue;
+                        }
+                        lls.splice(j, 1);
+                        layerUpdated = true;
+                        removedAny = true;
+                        j--;
+                    }
                 }
-                count += lls.length;
+                if (layerUpdated) l.setLatLngs(lls);
             });
+            if (!removedAny) {
+                this.showNotification("Punkt konnte nicht gelöscht werden.");
+                return;
+            }
         } else {
             const latlngs = this.currentFlightPath.getLatLngs();
             if (latlngs.length <= 2) {
@@ -1554,8 +1623,14 @@ class App {
 
         if ((fpMode === 'smart' || fpMode === 'genius') && smartResult && smartResult.multiPath && smartResult.multiPath.length > 1) {
             const group = L.featureGroup();
-            smartResult.multiPath.forEach(path => {
-                L.polyline(path.latlngs, { color: path.color, weight: 3 }).addTo(group);
+            smartResult.multiPath.forEach((path, idx) => {
+                const poly = L.polyline(path.latlngs, {
+                    color: path.color,
+                    weight: 3,
+                    dashArray: path.dashArray || null
+                });
+                poly.segmentIndex = idx;
+                poly.addTo(group);
             });
             this.currentFlightPath = group;
         } else {
@@ -1609,7 +1684,18 @@ class App {
             let latlngs = [];
             this.currentFlightPath.eachLayer(l => {
                 if (l.getLatLngs) {
-                    latlngs = latlngs.concat(l.getLatLngs());
+                    const segment = l.getLatLngs();
+                    if (latlngs.length > 0 && segment.length > 0) {
+                        const last = latlngs[latlngs.length - 1];
+                        const first = segment[0];
+                        if (last.lat === first.lat && last.lng === first.lng) {
+                            latlngs = latlngs.concat(segment.slice(1));
+                        } else {
+                            latlngs = latlngs.concat(segment);
+                        }
+                    } else {
+                        latlngs = latlngs.concat(segment);
+                    }
                 }
             });
             return latlngs;
@@ -1637,9 +1723,25 @@ class App {
 
     reverseFlightPlan() {
         if (!this.currentFlightPath) return;
-        const latlngs = this.getCurrentFlightPathLatLngs();
-        latlngs.reverse();
-        this.setCurrentFlightPathLatLngs(latlngs);
+        if (this.currentFlightPath instanceof L.FeatureGroup) {
+            const layers = [];
+            this.currentFlightPath.eachLayer(l => layers.push(l));
+            layers.sort((a, b) => a.segmentIndex - b.segmentIndex);
+            layers.reverse();
+
+            this.currentFlightPath.clearLayers();
+            layers.forEach((l, idx) => {
+                const lls = l.getLatLngs();
+                lls.reverse();
+                l.setLatLngs(lls);
+                l.segmentIndex = idx;
+                this.currentFlightPath.addLayer(l);
+            });
+        } else {
+            const latlngs = this.currentFlightPath.getLatLngs();
+            latlngs.reverse();
+            this.currentFlightPath.setLatLngs(latlngs);
+        }
         this.updateWaypointMarkers();
         this.updateWaypointTable();
     }
@@ -2011,18 +2113,15 @@ class App {
             return this.calculateIntelligentPath(virtualBorder, pathDistance, minPointDist);
         }
 
-        let allPoints = [];
-        let multiPath = [];
         const borderDistance = parseFloat(document.getElementById('fp-border-distance').value) || 5;
         const clipCorners = document.getElementById('fp-clip-corners').checked;
-
         const originalBoundary = turf.polygonToLine(originalPoly);
-        console.log("Original boundary type:", originalBoundary.geometry.type);
+
+        let sectionPaths = [];
         parts.forEach((part, idx) => {
             console.log(`Processing part ${idx}`);
             let partVirtualBorder = this.getMiteredOffset(part, borderDistance, clipCorners, originalBoundary, pathSpacing);
 
-            // Fallback: If offset fails at borderDistance, try a smaller offset
             if (!partVirtualBorder && borderDistance > 1) {
                 console.log(`Part ${idx}: getMiteredOffset failed at ${borderDistance}m, trying 1m fallback`);
                 partVirtualBorder = this.getMiteredOffset(part, 1, clipCorners, originalBoundary, pathSpacing);
@@ -2034,11 +2133,7 @@ class App {
             }
 
             try {
-                const intersectResult = turf.intersect(partVirtualBorder, part);
-                if (!intersectResult) {
-                    console.log(`Part ${idx}: turf.intersect returned null`);
-                }
-                partVirtualBorder = intersectResult;
+                partVirtualBorder = turf.intersect(partVirtualBorder, part);
             } catch (e) {
                 console.warn("Part intersection failed", e);
             }
@@ -2053,26 +2148,77 @@ class App {
             console.log(`Part ${idx}: Intelligent path generated ${result.points.length} points`);
 
             if (result.points.length > 0) {
-                const partColor = this.colors[idx % this.colors.length];
-                const partLatLngs = result.points.map(p => L.latLng(p[1], p[0]));
-                multiPath.push({ latlngs: partLatLngs, color: partColor });
+                sectionPaths.push({
+                    points: result.points,
+                    color: this.colors[idx % this.colors.length]
+                });
+            }
+        });
 
-                if (allPoints.length > 0) {
-                    const lastPt = allPoints[allPoints.length - 1];
-                    const firstPt = result.points[0];
-                    // Connect using the virtual border to respect safe distance
-                    const connection = this.getBorderPath(lastPt, firstPt, virtualBorder);
-                    console.log(`Part ${idx}: Connection added ${connection.length} points`);
+        if (sectionPaths.length === 0) {
+            return this.calculateIntelligentPath(virtualBorder, pathDistance, minPointDist);
+        }
+
+        let allPoints = [];
+        let multiPath = [];
+
+        sectionPaths.forEach((section, idx) => {
+            let points = [...section.points];
+
+            if (idx === 0) {
+                allPoints = [...points];
+                multiPath.push({
+                    latlngs: points.map(p => L.latLng(p[1], p[0])),
+                    color: section.color
+                });
+            } else {
+                const lastPt = allPoints[allPoints.length - 1];
+                const startPt = points[0];
+                const endPt = points[points.length - 1];
+
+                const distNormal = turf.distance(turf.point(lastPt), turf.point(startPt), { units: 'meters' });
+                const distReversed = turf.distance(turf.point(lastPt), turf.point(endPt), { units: 'meters' });
+
+                if (distReversed < distNormal) {
+                    points.reverse();
+                    console.log(`Section ${idx} reversed for shorter connection.`);
+                }
+
+                const connection = this.getBorderPath(lastPt, points[0], virtualBorder);
+                const connectionLatLngs = [L.latLng(lastPt[1], lastPt[0])];
+                connection.forEach(p => {
+                    const ll = L.latLng(p[1], p[0]);
+                    if (ll.distanceTo(connectionLatLngs[connectionLatLngs.length - 1]) > 0.1) {
+                        connectionLatLngs.push(ll);
+                    }
+                });
+
+                if (connectionLatLngs.length >= 2) {
+                    const prevColor = sectionPaths[idx - 1].color;
+                    const transitionColor = this.interpolateColor(prevColor, section.color);
+
+                    multiPath.push({
+                        latlngs: connectionLatLngs,
+                        color: transitionColor,
+                        dashArray: '5, 5'
+                    });
+
                     connection.forEach(p => {
                         if (turf.distance(allPoints[allPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                             allPoints.push(p);
                         }
                     });
                 }
-                result.points.forEach(p => {
+
+                points.forEach(p => {
                     if (allPoints.length === 0 || turf.distance(allPoints[allPoints.length - 1], p, { units: 'meters' }) > 0.1) {
                         allPoints.push(p);
                     }
+                });
+
+                multiPath.push({
+                    latlngs: points.map(p => L.latLng(p[1], p[0])),
+                    color: section.color
                 });
             }
         });
