@@ -905,11 +905,14 @@ class App {
 
         this.terrainFollowingCheckbox.addEventListener('change', (e) => {
             const heightModeContainer = document.getElementById('fp-height-mode-container');
+            const heightModeSelect = document.getElementById('fp-height-mode');
             const checked = e.target.checked;
             updateActiveFieldParam('fp_terrain_following', checked ? 1 : 0);
 
             if (checked) {
                 heightModeContainer.classList.remove('hidden');
+                heightModeSelect.value = 'absolute';
+                updateActiveFieldParam('fp_height_mode', 'absolute');
                 this.showWPHeightCheckbox.disabled = false;
                 this.showWPHeightCheckbox.checked = true;
                 updateActiveFieldParam('fp_show_wp_height', 1);
@@ -939,6 +942,7 @@ class App {
         const simpleDropdowns = [
             ['fp-height-mode', 'fp_height_mode'],
             ['fp-drone-info', 'fp_drone_info'],
+            ['fp-payload-info', 'fp_payload_info'],
             ['fp-finish-action', 'fp_finish_action'],
             ['fp-rc-lost-action', 'fp_rc_lost_action'],
             ['fp-execute-rc-lost-action', 'fp_execute_rc_lost_action'],
@@ -1324,7 +1328,7 @@ class App {
         let latlngs = this.getCurrentFlightPathLatLngs();
 
         latlngs.forEach((ll, idx) => {
-            const absHeight = ll.alt !== undefined ? ll.alt.toFixed(1) : '';
+            const absHeight = ll.alt !== undefined ? Math.round(ll.alt) : '';
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${idx + 1}</td>
@@ -1637,6 +1641,16 @@ class App {
             this.currentFlightPath = L.polyline(latlngs, { color: 'red', weight: 3 });
         }
 
+        // Default takeoff security height to first waypoint height if not manually set
+        if (!this.isTakeoffHeightManuallySet && latlngs.length > 0) {
+            const takeoffInput = document.getElementById('fp-takeoff-security-height');
+            const firstWpHeight = latlngs[0].alt !== undefined ? Math.round(latlngs[0].alt) : parseFloat(document.getElementById('fp-height').value) || 15;
+            if (takeoffInput) {
+                takeoffInput.value = firstWpHeight;
+                updateActiveFieldParam('fp_takeoff_security_height', firstWpHeight);
+            }
+        }
+
         this.updateWaypointMarkers();
         this.updateWaypointTable();
 
@@ -1654,6 +1668,7 @@ class App {
         field.fp_show_wp_height = this.showWPHeightCheckbox.checked ? 1 : 0;
         field.fp_height_mode = document.getElementById('fp-height-mode').value;
         field.fp_drone_info = document.getElementById('fp-drone-info').value;
+        field.fp_payload_info = document.getElementById('fp-payload-info').value;
         field.fp_finish_action = document.getElementById('fp-finish-action').value;
         field.fp_rc_lost_action = document.getElementById('fp-rc-lost-action').value;
         field.fp_execute_rc_lost_action = document.getElementById('fp-execute-rc-lost-action').value;
@@ -2448,12 +2463,12 @@ class App {
         const field = this.fields.find(f => String(f.id) === String(id));
         const name = (field ? field.name : 'Flugplan') + '_DJI';
 
-        const defaultHeight = parseFloat(document.getElementById('fp-height').value) || 15;
+        const defaultHeight = Math.round(parseFloat(document.getElementById('fp-height').value)) || 15;
         const latlngs = this.getCurrentFlightPathLatLngs();
         const terrainFollowing = this.terrainFollowingCheckbox.checked;
         const altitudeMode = terrainFollowing ? 'absolute' : 'relativeToGround';
         const coords = latlngs.map(ll => {
-            const h = (terrainFollowing && ll.alt !== undefined) ? ll.alt : defaultHeight;
+            const h = (terrainFollowing && ll.alt !== undefined) ? Math.round(ll.alt) : defaultHeight;
             return `${ll.lng},${ll.lat},${h}`;
         }).join(' ');
 
@@ -2506,12 +2521,12 @@ class App {
         const exitOnRCLost = document.getElementById('fp-rc-lost-action').value;
         const executeRCLostAction = document.getElementById('fp-execute-rc-lost-action').value;
         const flyToWaylineMode = document.getElementById('fp-fly-to-wayline-mode').value;
-        const takeOffSecurityHeight = document.getElementById('fp-takeoff-security-height').value;
+        const takeOffSecurityHeight = Math.round(parseFloat(document.getElementById('fp-takeoff-security-height').value));
         const waypointTurnMode = document.getElementById('fp-waypoint-turn-mode').value;
         const waypointHeadingMode = document.getElementById('fp-waypoint-heading-mode').value;
 
         const speed = parseFloat(document.getElementById('fp-speed').value) || 12;
-        const globalHeight = parseFloat(document.getElementById('fp-height').value) || 15;
+        const globalHeight = Math.round(parseFloat(document.getElementById('fp-height').value)) || 15;
 
         const terrainFollowing = this.terrainFollowingCheckbox.checked;
         const heightMode = terrainFollowing ? document.getElementById('fp-height-mode').value : 'relativeToStartPoint';
@@ -2574,7 +2589,7 @@ class App {
 
         let placemarks = '';
         latlngs.forEach((ll, idx) => {
-            const h = (ll.alt !== undefined) ? ll.alt.toFixed(2) : globalHeight.toFixed(2);
+            const h = (ll.alt !== undefined) ? Math.round(ll.alt) : globalHeight;
             placemarks += `
       <Placemark>
         <Point>
@@ -2615,9 +2630,9 @@ class App {
         <wpml:droneSubEnumValue>${droneEnumValue === '77' ? '1' : '0'}</wpml:droneSubEnumValue>
       </wpml:droneInfo>
       <wpml:payloadInfo>
-        <wpml:payloadEnumValue>67</wpml:payloadEnumValue>
-        <wpml:payloadSubEnumValue>0</wpml:payloadSubEnumValue>
-        <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
+        <wpml:payloadEnumValue>${document.getElementById('fp-payload-info').value === 'none' ? '' : document.getElementById('fp-payload-info').value}</wpml:payloadEnumValue>
+        <wpml:payloadSubEnumValue>${document.getElementById('fp-payload-info').value === 'none' ? '' : '0'}</wpml:payloadSubEnumValue>
+        <wpml:payloadPositionIndex>${document.getElementById('fp-payload-info').value === 'none' ? '' : '0'}</wpml:payloadPositionIndex>
       </wpml:payloadInfo>
       ${finishActionTag}
       <wpml:exitOnRCLost>${exitOnRCLost}</wpml:exitOnRCLost>
@@ -3361,6 +3376,7 @@ class App {
         document.getElementById('fp-show-wp-height').checked = field.fp_show_wp_height == 1;
         document.getElementById('fp-height-mode').value = field.fp_height_mode || 'relativeToStartPoint';
         document.getElementById('fp-drone-info').value = field.fp_drone_info || '60';
+        document.getElementById('fp-payload-info').value = field.fp_payload_info || 'none';
         document.getElementById('fp-finish-action').value = field.fp_finish_action || 'goHome';
         document.getElementById('fp-rc-lost-action').value = field.fp_rc_lost_action || 'executeLostAction';
         document.getElementById('fp-execute-rc-lost-action').value = field.fp_execute_rc_lost_action || 'goBack';
