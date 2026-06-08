@@ -82,6 +82,7 @@ try {
         'fp_show_wp_height' => 'INTEGER',
         'fp_height_mode' => 'TEXT',
         'fp_drone_info' => 'TEXT',
+        'fp_payload_info' => 'TEXT',
         'fp_finish_action' => 'TEXT',
         'fp_rc_lost_action' => 'TEXT',
         'fp_execute_rc_lost_action' => 'TEXT',

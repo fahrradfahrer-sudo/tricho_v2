@@ -247,6 +247,7 @@ class App {
                 fp_show_wp_height: 0,
                 fp_height_mode: 'relativeToStartPoint',
                 fp_drone_info: '60',
+                fp_payload_info: 'none',
                 fp_finish_action: 'goHome',
                 fp_rc_lost_action: 'executeLostAction',
                 fp_execute_rc_lost_action: 'goBack',
@@ -764,7 +765,7 @@ class App {
             const fpParams = [
                 'fp_path_distance', 'fp_border_distance', 'fp_min_dist', 'fp_orientation',
                 'fp_speed', 'fp_height', 'fp_mode', 'fp_clip_corners', 'fp_terrain_following',
-                'fp_show_wp_height', 'fp_height_mode', 'fp_drone_info', 'fp_finish_action',
+                'fp_show_wp_height', 'fp_height_mode', 'fp_drone_info', 'fp_payload_info', 'fp_finish_action',
                 'fp_rc_lost_action', 'fp_execute_rc_lost_action', 'fp_fly_to_wayline_mode',
                 'fp_takeoff_security_height', 'fp_waypoint_turn_mode', 'fp_waypoint_heading_mode'
             ];
@@ -829,15 +830,15 @@ class App {
         }
     }
 
-    initFPInputs() {
-        const updateActiveFieldParam = (key, val) => {
-            const fieldId = document.getElementById('fp-field-id').value;
-            const field = this.fields.find(f => String(f.id) === String(fieldId));
-            if (field) {
-                field[key] = val;
-            }
-        };
+    updateActiveFieldParam(key, val) {
+        const fieldId = document.getElementById('fp-field-id').value;
+        const field = this.fields.find(f => String(f.id) === String(fieldId));
+        if (field) {
+            field[key] = val;
+        }
+    }
 
+    initFPInputs() {
         const syncInput = (sliderId, inputId, valSpanId, paramKey, isOrientation = false) => {
             const slider = document.getElementById(sliderId);
             const input = document.getElementById(inputId);
@@ -853,7 +854,7 @@ class App {
                 } else {
                     if (valSpan) valSpan.textContent = val;
                 }
-                updateActiveFieldParam(paramKey, val);
+                this.updateActiveFieldParam(paramKey, val);
                 this.scheduleFPUpdate();
             };
 
@@ -877,14 +878,14 @@ class App {
             if (source !== 'input' && heightInput) heightInput.value = val;
             if (heightValSpan) heightValSpan.textContent = val;
 
-            updateActiveFieldParam('fp_height', val);
+            this.updateActiveFieldParam('fp_height', val);
 
             // Automatically update takeoff security height if not manually set
             if (!this.isTakeoffHeightManuallySet) {
                 const takeoffInput = document.getElementById('fp-takeoff-security-height');
                 if (takeoffInput) {
                     takeoffInput.value = val;
-                    updateActiveFieldParam('fp_takeoff_security_height', val);
+                    this.updateActiveFieldParam('fp_takeoff_security_height', val);
                 }
             }
             this.scheduleFPUpdate();
@@ -894,12 +895,12 @@ class App {
         if (heightInput) heightInput.addEventListener('input', (e) => updateHeight(e.target.value, 'input'));
 
         document.getElementById('fp-mode').addEventListener('change', (e) => {
-            updateActiveFieldParam('fp_mode', e.target.value);
+            this.updateActiveFieldParam('fp_mode', e.target.value);
             this.generateFlightPlan();
         });
 
         document.getElementById('fp-clip-corners').addEventListener('change', (e) => {
-            updateActiveFieldParam('fp_clip_corners', e.target.checked ? 1 : 0);
+            this.updateActiveFieldParam('fp_clip_corners', e.target.checked ? 1 : 0);
             this.generateFlightPlan();
         });
 
@@ -907,26 +908,26 @@ class App {
             const heightModeContainer = document.getElementById('fp-height-mode-container');
             const heightModeSelect = document.getElementById('fp-height-mode');
             const checked = e.target.checked;
-            updateActiveFieldParam('fp_terrain_following', checked ? 1 : 0);
+            this.updateActiveFieldParam('fp_terrain_following', checked ? 1 : 0);
 
             if (checked) {
                 heightModeContainer.classList.remove('hidden');
                 heightModeSelect.value = 'absolute';
-                updateActiveFieldParam('fp_height_mode', 'absolute');
+                this.updateActiveFieldParam('fp_height_mode', 'absolute');
                 this.showWPHeightCheckbox.disabled = false;
                 this.showWPHeightCheckbox.checked = true;
-                updateActiveFieldParam('fp_show_wp_height', 1);
+                this.updateActiveFieldParam('fp_show_wp_height', 1);
             } else {
                 heightModeContainer.classList.add('hidden');
                 this.showWPHeightCheckbox.disabled = true;
                 this.showWPHeightCheckbox.checked = false;
-                updateActiveFieldParam('fp_show_wp_height', 0);
+                this.updateActiveFieldParam('fp_show_wp_height', 0);
             }
             this.scheduleFPUpdate();
         });
 
         this.showWPHeightCheckbox.addEventListener('change', (e) => {
-            updateActiveFieldParam('fp_show_wp_height', e.target.checked ? 1 : 0);
+            this.updateActiveFieldParam('fp_show_wp_height', e.target.checked ? 1 : 0);
             this.updateWaypointMarkers();
         });
 
@@ -953,13 +954,13 @@ class App {
 
         simpleDropdowns.forEach(([id, param]) => {
             document.getElementById(id).addEventListener('change', (e) => {
-                updateActiveFieldParam(param, e.target.value);
+                this.updateActiveFieldParam(param, e.target.value);
             });
         });
 
         document.getElementById('fp-takeoff-security-height').addEventListener('change', (e) => {
             this.isTakeoffHeightManuallySet = true;
-            updateActiveFieldParam('fp_takeoff_security_height', e.target.value);
+            this.updateActiveFieldParam('fp_takeoff_security_height', e.target.value);
         });
 
         document.getElementById('fp-rc-lost-action').addEventListener('change', (e) => {
@@ -1369,7 +1370,7 @@ class App {
                             if (pointGlobalIdx === idx) {
                                 if (type === 'lat') lls[j].lat = val;
                                 else if (type === 'lng') lls[j].lng = val;
-                                else if (type === 'alt') lls[j].alt = val;
+                                else if (type === 'alt') lls[j].alt = Math.round(val);
                                 layerUpdated = true;
                             }
                         }
@@ -1379,7 +1380,7 @@ class App {
                     const currentLatLngs = this.currentFlightPath.getLatLngs();
                     if (type === 'lat') currentLatLngs[idx].lat = val;
                     else if (type === 'lng') currentLatLngs[idx].lng = val;
-                    else if (type === 'alt') currentLatLngs[idx].alt = val;
+                    else if (type === 'alt') currentLatLngs[idx].alt = Math.round(val);
                     this.currentFlightPath.setLatLngs(currentLatLngs);
                 }
                 this.updateWaypointMarkers();
@@ -1613,12 +1614,20 @@ class App {
                 const terrainData = await this.fetchTerrainHeights(latlngs);
                 const flightHeight = parseFloat(document.getElementById('fp-height').value) || 15;
                 latlngs.forEach((ll, idx) => {
-                    const terrainHeight = terrainData[idx].elevation;
-                    ll.alt = terrainHeight + flightHeight;
+                    if (terrainData[idx] && terrainData[idx].elevation !== undefined) {
+                        const terrainHeight = terrainData[idx].elevation;
+                        ll.alt = terrainHeight + flightHeight;
+                    } else {
+                        console.warn(`No terrain data for waypoint ${idx}, using relative height.`);
+                        ll.alt = flightHeight;
+                    }
                 });
             } catch (err) {
-                this.showNotification(err.message);
-                this.terrainFollowingCheckbox.checked = false;
+                console.error("Terrain following failed:", err);
+                this.showNotification('Geländehöhen konnten nicht geladen werden. Der Flugplan wurde mit relativen Höhen erstellt.');
+                // Don't uncheck, let the user decide. But we need to ensure altitudes exist.
+                const flightHeight = parseFloat(document.getElementById('fp-height').value) || 15;
+                latlngs.forEach(ll => { if (ll.alt === undefined) ll.alt = flightHeight; });
             } finally {
                 this.btnGenerateFP.textContent = originalBtnText;
                 this.btnGenerateFP.disabled = false;
@@ -1647,7 +1656,7 @@ class App {
             const firstWpHeight = latlngs[0].alt !== undefined ? Math.round(latlngs[0].alt) : parseFloat(document.getElementById('fp-height').value) || 15;
             if (takeoffInput) {
                 takeoffInput.value = firstWpHeight;
-                updateActiveFieldParam('fp_takeoff_security_height', firstWpHeight);
+                this.updateActiveFieldParam('fp_takeoff_security_height', firstWpHeight);
             }
         }
 
@@ -2629,11 +2638,12 @@ class App {
         <wpml:droneEnumValue>${droneEnumValue}</wpml:droneEnumValue>
         <wpml:droneSubEnumValue>${droneEnumValue === '77' ? '1' : '0'}</wpml:droneSubEnumValue>
       </wpml:droneInfo>
+      ${document.getElementById('fp-payload-info').value !== 'none' ? `
       <wpml:payloadInfo>
-        <wpml:payloadEnumValue>${document.getElementById('fp-payload-info').value === 'none' ? '' : document.getElementById('fp-payload-info').value}</wpml:payloadEnumValue>
-        <wpml:payloadSubEnumValue>${document.getElementById('fp-payload-info').value === 'none' ? '' : '0'}</wpml:payloadSubEnumValue>
-        <wpml:payloadPositionIndex>${document.getElementById('fp-payload-info').value === 'none' ? '' : '0'}</wpml:payloadPositionIndex>
-      </wpml:payloadInfo>
+        <wpml:payloadEnumValue>${document.getElementById('fp-payload-info').value}</wpml:payloadEnumValue>
+        <wpml:payloadSubEnumValue>0</wpml:payloadSubEnumValue>
+        <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
+      </wpml:payloadInfo>` : ''}
       ${finishActionTag}
       <wpml:exitOnRCLost>${exitOnRCLost}</wpml:exitOnRCLost>
       <wpml:executeRCLostAction>${executeRCLostAction}</wpml:executeRCLostAction>
@@ -3086,6 +3096,7 @@ class App {
                         fieldInApp.fp_show_wp_height = f.fp_show_wp_height;
                         fieldInApp.fp_height_mode = f.fp_height_mode;
                         fieldInApp.fp_drone_info = f.fp_drone_info;
+                        fieldInApp.fp_payload_info = f.fp_payload_info;
                         fieldInApp.fp_finish_action = f.fp_finish_action;
                         fieldInApp.fp_rc_lost_action = f.fp_rc_lost_action;
                         fieldInApp.fp_execute_rc_lost_action = f.fp_execute_rc_lost_action;
@@ -3158,6 +3169,7 @@ class App {
                         fieldInApp.fp_show_wp_height = f.fp_show_wp_height;
                         fieldInApp.fp_height_mode = f.fp_height_mode;
                         fieldInApp.fp_drone_info = f.fp_drone_info;
+                        fieldInApp.fp_payload_info = f.fp_payload_info;
                         fieldInApp.fp_finish_action = f.fp_finish_action;
                         fieldInApp.fp_rc_lost_action = f.fp_rc_lost_action;
                         fieldInApp.fp_execute_rc_lost_action = f.fp_execute_rc_lost_action;
@@ -3456,6 +3468,7 @@ class App {
             formData.append(`fields[${index}][fp_show_wp_height]`, field.fp_show_wp_height ?? 0);
             formData.append(`fields[${index}][fp_height_mode]`, field.fp_height_mode ?? 'relativeToStartPoint');
             formData.append(`fields[${index}][fp_drone_info]`, field.fp_drone_info ?? '60');
+            formData.append(`fields[${index}][fp_payload_info]`, field.fp_payload_info ?? 'none');
             formData.append(`fields[${index}][fp_finish_action]`, field.fp_finish_action ?? 'goHome');
             formData.append(`fields[${index}][fp_rc_lost_action]`, field.fp_rc_lost_action ?? 'executeLostAction');
             formData.append(`fields[${index}][fp_execute_rc_lost_action]`, field.fp_execute_rc_lost_action ?? 'goBack');
