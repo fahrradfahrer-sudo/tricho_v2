@@ -34,6 +34,7 @@ class App {
         this.currentFlightPath = null;
         this.fpUpdateTimeout = null;
         this.isTakeoffHeightManuallySet = false;
+        this.isDampingDistanceManuallySet = false;
         this.currentCustomerId = null;
         this.colors = ['red', 'blue', 'green', 'orange', 'purple', 'cyan'];
         this.manualSplitMode = false;
@@ -862,7 +863,55 @@ class App {
             if (input) input.addEventListener('change', (e) => update(e.target.value, 'input'));
         };
 
-        syncInput('slider-fp-path-distance', 'fp-path-distance', 'val-fp-path-distance', 'fp_path_distance');
+        // Custom sync for damping distance to track manual changes
+        const dampingSlider = document.getElementById('slider-fp-damping-distance');
+        const dampingInput = document.getElementById('fp-damping-distance');
+        const dampingValSpan = document.getElementById('val-fp-damping-distance');
+
+        const updateDamping = (val, source) => {
+            if (source !== 'slider' && dampingSlider) dampingSlider.value = val;
+            if (source !== 'input' && dampingInput) dampingInput.value = val;
+            if (dampingValSpan) dampingValSpan.textContent = val;
+
+            this.updateActiveFieldParam('fp_damping_distance', val);
+            this.scheduleFPUpdate();
+        };
+
+        if (dampingSlider) {
+            dampingSlider.addEventListener('input', (e) => {
+                this.isDampingDistanceManuallySet = true;
+                updateDamping(e.target.value, 'slider');
+            });
+        }
+        if (dampingInput) {
+            dampingInput.addEventListener('change', (e) => {
+                this.isDampingDistanceManuallySet = true;
+                updateDamping(e.target.value, 'input');
+            });
+        }
+
+        // Override the path distance update to also update damping distance if not manually set
+        const pathSlider = document.getElementById('slider-fp-path-distance');
+        const pathInput = document.getElementById('fp-path-distance');
+        const pathValSpan = document.getElementById('val-fp-path-distance');
+
+        const updatePathDistance = (val, source) => {
+            if (source !== 'slider' && pathSlider) pathSlider.value = val;
+            if (source !== 'input' && pathInput) pathInput.value = val;
+            if (pathValSpan) pathValSpan.textContent = val;
+
+            this.updateActiveFieldParam('fp_path_distance', val);
+
+            if (!this.isDampingDistanceManuallySet) {
+                const dampingVal = Math.max(0.2, (parseFloat(val) / 2) - 1).toFixed(1);
+                updateDamping(dampingVal, 'auto');
+            }
+
+            this.scheduleFPUpdate();
+        };
+
+        if (pathSlider) pathSlider.addEventListener('input', (e) => updatePathDistance(e.target.value, 'slider'));
+        if (pathInput) pathInput.addEventListener('change', (e) => updatePathDistance(e.target.value, 'input'));
         syncInput('slider-fp-min-dist', 'fp-min-dist', 'val-fp-min-dist', 'fp_min_dist');
         syncInput('slider-fp-border-distance', 'fp-border-distance', 'val-fp-border-distance', 'fp_border_distance');
         syncInput('slider-fp-orientation', 'fp-orientation', 'val-fp-orientation', 'fp_orientation', true);
@@ -1146,6 +1195,7 @@ class App {
 
         if (prevId !== id) {
             this.isTakeoffHeightManuallySet = false;
+            this.isDampingDistanceManuallySet = false;
         }
 
         document.getElementById('fp-field-id').value = id;
@@ -2532,6 +2582,7 @@ class App {
         const flyToWaylineMode = document.getElementById('fp-fly-to-wayline-mode').value;
         const takeOffSecurityHeight = Math.round(parseFloat(document.getElementById('fp-takeoff-security-height').value));
         const waypointTurnMode = document.getElementById('fp-waypoint-turn-mode').value;
+        const dampingDistance = parseFloat(document.getElementById('fp-damping-distance').value) || 0;
         const waypointHeadingMode = document.getElementById('fp-waypoint-heading-mode').value;
 
         const speed = parseFloat(document.getElementById('fp-speed').value) || 12;
@@ -2612,7 +2663,7 @@ class App {
         <wpml:useGlobalSpeed>0</wpml:useGlobalSpeed>
         <wpml:useStraightLine>1</wpml:useStraightLine>
         <wpml:waypointTurnParam>
-          <wpml:waypointTurnDampingDist>0</wpml:waypointTurnDampingDist>
+          <wpml:waypointTurnDampingDist>${waypointTurnMode === 'coordinateTurn' ? dampingDistance : 0}</wpml:waypointTurnDampingDist>
           <wpml:waypointTurnMode>${waypointTurnMode}</wpml:waypointTurnMode>
         </wpml:waypointTurnParam>
         <wpml:waypointHeadingParam>
@@ -3373,6 +3424,7 @@ class App {
 
         setVal('slider-fp-path-distance', 'fp-path-distance', 'val-fp-path-distance', field.fp_path_distance);
         setVal('slider-fp-border-distance', 'fp-border-distance', 'val-fp-border-distance', field.fp_border_distance);
+        setVal('slider-fp-damping-distance', 'fp-damping-distance', 'val-fp-damping-distance', field.fp_damping_distance);
         setVal('slider-fp-min-dist', 'fp-min-dist', 'val-fp-min-dist', field.fp_min_dist);
         setVal('slider-fp-orientation', 'fp-orientation', 'val-fp-orientation', field.fp_orientation, true);
         setVal('slider-fp-speed', 'fp-speed', 'val-fp-speed', field.fp_speed);
