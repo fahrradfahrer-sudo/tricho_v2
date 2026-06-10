@@ -59,6 +59,7 @@ try {
         fp_execute_rc_lost_action TEXT,
         fp_fly_to_wayline_mode TEXT,
         fp_takeoff_security_height REAL,
+        fp_damping_distance REAL,
         fp_waypoint_turn_mode TEXT,
         fp_waypoint_heading_mode TEXT,
         flight_path TEXT, -- JSON string of waypoints
@@ -88,6 +89,7 @@ try {
         'fp_execute_rc_lost_action' => 'TEXT',
         'fp_fly_to_wayline_mode' => 'TEXT',
         'fp_takeoff_security_height' => 'REAL',
+        'fp_damping_distance' => 'REAL',
         'fp_waypoint_turn_mode' => 'TEXT',
         'fp_waypoint_heading_mode' => 'TEXT',
         'flight_path' => 'TEXT',
