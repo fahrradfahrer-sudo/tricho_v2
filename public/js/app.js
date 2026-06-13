@@ -241,8 +241,8 @@ class App {
                 fp_min_dist: 5,
                 fp_orientation: 0,
                 fp_speed: 10,
-                fp_height: 15,
-                fp_mode: 'zigzag',
+                fp_height: 25,
+                fp_mode: 'genius',
                 fp_clip_corners: 1,
                 fp_terrain_following: 0,
                 fp_show_wp_height: 0,
@@ -253,7 +253,7 @@ class App {
                 fp_rc_lost_action: 'executeLostAction',
                 fp_execute_rc_lost_action: 'goBack',
                 fp_fly_to_wayline_mode: 'safely',
-                fp_takeoff_security_height: 15,
+                fp_takeoff_security_height: 25,
                 fp_waypoint_turn_mode: 'coordinateTurn',
                 fp_waypoint_heading_mode: 'followWayline'
             };
@@ -391,6 +391,8 @@ class App {
         });
 
         this.initFPInputs();
+        this.updateDamping(4.0, 'auto');
+        this.isDampingDistanceManuallySet = false;
         this.initSidebarLogic();
 
         // Check for instructional arrow on load
@@ -868,10 +870,13 @@ class App {
         const dampingInput = document.getElementById('fp-damping-distance');
         const dampingValSpan = document.getElementById('val-fp-damping-distance');
 
-        const updateDamping = (val, source) => {
+        this.updateDamping = (val, source) => {
+            const numVal = parseFloat(val);
+            const formattedVal = isNaN(numVal) ? val : numVal.toFixed(1);
+
             if (source !== 'slider' && dampingSlider) dampingSlider.value = val;
             if (source !== 'input' && dampingInput) dampingInput.value = val;
-            if (dampingValSpan) dampingValSpan.textContent = val;
+            if (dampingValSpan) dampingValSpan.textContent = formattedVal;
 
             this.updateActiveFieldParam('fp_damping_distance', val);
             this.scheduleFPUpdate();
@@ -880,13 +885,13 @@ class App {
         if (dampingSlider) {
             dampingSlider.addEventListener('input', (e) => {
                 this.isDampingDistanceManuallySet = true;
-                updateDamping(e.target.value, 'slider');
+                this.updateDamping(e.target.value, 'slider');
             });
         }
         if (dampingInput) {
             dampingInput.addEventListener('change', (e) => {
                 this.isDampingDistanceManuallySet = true;
-                updateDamping(e.target.value, 'input');
+                this.updateDamping(e.target.value, 'input');
             });
         }
 
@@ -904,7 +909,7 @@ class App {
 
             if (!this.isDampingDistanceManuallySet) {
                 const dampingVal = Math.max(0.2, (parseFloat(val) / 2) - 1).toFixed(1);
-                updateDamping(dampingVal, 'auto');
+                this.updateDamping(dampingVal, 'auto');
             }
 
             this.scheduleFPUpdate();
@@ -1662,7 +1667,7 @@ class App {
 
             try {
                 const terrainData = await this.fetchTerrainHeights(latlngs);
-                const flightHeight = parseFloat(document.getElementById('fp-height').value) || 15;
+                const flightHeight = parseFloat(document.getElementById('fp-height').value) || 25;
                 latlngs.forEach((ll, idx) => {
                     if (terrainData[idx] && terrainData[idx].elevation !== undefined) {
                         const terrainHeight = terrainData[idx].elevation;
@@ -1703,7 +1708,7 @@ class App {
         // Default takeoff security height to first waypoint height if not manually set
         if (!this.isTakeoffHeightManuallySet && latlngs.length > 0) {
             const takeoffInput = document.getElementById('fp-takeoff-security-height');
-            const firstWpHeight = latlngs[0].alt !== undefined ? Math.round(latlngs[0].alt) : parseFloat(document.getElementById('fp-height').value) || 15;
+            const firstWpHeight = latlngs[0].alt !== undefined ? Math.round(latlngs[0].alt) : parseFloat(document.getElementById('fp-height').value) || 25;
             if (takeoffInput) {
                 takeoffInput.value = firstWpHeight;
                 this.updateActiveFieldParam('fp_takeoff_security_height', firstWpHeight);
@@ -1721,7 +1726,7 @@ class App {
         field.fp_min_dist = minPointDist;
         field.fp_orientation = orientation === "" ? 0 : parseFloat(orientation);
         field.fp_speed = speed;
-        field.fp_height = parseFloat(document.getElementById('fp-height').value) || 15;
+        field.fp_height = parseFloat(document.getElementById('fp-height').value) || 25;
         field.fp_clip_corners = clipCorners ? 1 : 0;
         field.fp_terrain_following = this.terrainFollowingCheckbox.checked ? 1 : 0;
         field.fp_show_wp_height = this.showWPHeightCheckbox.checked ? 1 : 0;
@@ -2522,7 +2527,7 @@ class App {
         const field = this.fields.find(f => String(f.id) === String(id));
         const name = (field ? field.name : 'Flugplan') + '_DJI';
 
-        const defaultHeight = Math.round(parseFloat(document.getElementById('fp-height').value)) || 15;
+        const defaultHeight = Math.round(parseFloat(document.getElementById('fp-height').value)) || 25;
         const latlngs = this.getCurrentFlightPathLatLngs();
         const terrainFollowing = this.terrainFollowingCheckbox.checked;
         const altitudeMode = terrainFollowing ? 'absolute' : 'relativeToGround';
@@ -2586,7 +2591,7 @@ class App {
         const waypointHeadingMode = document.getElementById('fp-waypoint-heading-mode').value;
 
         const speed = parseFloat(document.getElementById('fp-speed').value) || 12;
-        const globalHeight = Math.round(parseFloat(document.getElementById('fp-height').value)) || 15;
+        const globalHeight = Math.round(parseFloat(document.getElementById('fp-height').value)) || 25;
 
         const terrainFollowing = this.terrainFollowingCheckbox.checked;
         const heightMode = terrainFollowing ? document.getElementById('fp-height-mode').value : 'relativeToStartPoint';
@@ -2657,7 +2662,6 @@ class App {
         </Point>
         <wpml:index>${idx}</wpml:index>
         <wpml:useGlobalHeight>0</wpml:useGlobalHeight>
-        <wpml:ellipsoidHeight>${h}</wpml:ellipsoidHeight>
         <wpml:height>${h}</wpml:height>
         <wpml:waypointSpeed>${speed}</wpml:waypointSpeed>
         <wpml:useGlobalSpeed>0</wpml:useGlobalSpeed>
@@ -3424,7 +3428,13 @@ class App {
 
         setVal('slider-fp-path-distance', 'fp-path-distance', 'val-fp-path-distance', field.fp_path_distance);
         setVal('slider-fp-border-distance', 'fp-border-distance', 'val-fp-border-distance', field.fp_border_distance);
-        setVal('slider-fp-damping-distance', 'fp-damping-distance', 'val-fp-damping-distance', field.fp_damping_distance);
+        if (field.fp_damping_distance !== undefined && field.fp_damping_distance !== null) {
+            setVal('slider-fp-damping-distance', 'fp-damping-distance', 'val-fp-damping-distance', field.fp_damping_distance);
+        } else {
+            const dampingVal = Math.max(0.2, (parseFloat(field.fp_path_distance || 10) / 2) - 1).toFixed(1);
+            this.updateDamping(dampingVal, 'auto');
+            this.isDampingDistanceManuallySet = false; // Reset because updateDamping might be used during init
+        }
         setVal('slider-fp-min-dist', 'fp-min-dist', 'val-fp-min-dist', field.fp_min_dist);
         setVal('slider-fp-orientation', 'fp-orientation', 'val-fp-orientation', field.fp_orientation, true);
         setVal('slider-fp-speed', 'fp-speed', 'val-fp-speed', field.fp_speed);
@@ -3433,7 +3443,7 @@ class App {
         if (field.fp_mode === 'smartplus') {
             document.getElementById('fp-mode').value = 'smartplus';
         } else {
-            document.getElementById('fp-mode').value = field.fp_mode || 'zigzag';
+            document.getElementById('fp-mode').value = field.fp_mode || 'genius';
         }
         document.getElementById('fp-clip-corners').checked = field.fp_clip_corners == 1;
         document.getElementById('fp-terrain-following').checked = field.fp_terrain_following == 1;
@@ -3445,7 +3455,7 @@ class App {
         document.getElementById('fp-rc-lost-action').value = field.fp_rc_lost_action || 'executeLostAction';
         document.getElementById('fp-execute-rc-lost-action').value = field.fp_execute_rc_lost_action || 'goBack';
         document.getElementById('fp-fly-to-wayline-mode').value = field.fp_fly_to_wayline_mode || 'safely';
-        document.getElementById('fp-takeoff-security-height').value = field.fp_takeoff_security_height || field.fp_height || '15';
+        document.getElementById('fp-takeoff-security-height').value = field.fp_takeoff_security_height || field.fp_height || '25';
         document.getElementById('fp-waypoint-turn-mode').value = field.fp_waypoint_turn_mode || 'coordinateTurn';
         document.getElementById('fp-waypoint-heading-mode').value = field.fp_waypoint_heading_mode || 'followWayline';
 
@@ -3513,8 +3523,8 @@ class App {
             formData.append(`fields[${index}][fp_min_dist]`, field.fp_min_dist ?? 5);
             formData.append(`fields[${index}][fp_orientation]`, field.fp_orientation ?? 0);
             formData.append(`fields[${index}][fp_speed]`, field.fp_speed ?? 10);
-            formData.append(`fields[${index}][fp_height]`, field.fp_height ?? 15);
-            formData.append(`fields[${index}][fp_mode]`, field.fp_mode ?? 'zigzag');
+            formData.append(`fields[${index}][fp_height]`, field.fp_height ?? 25);
+            formData.append(`fields[${index}][fp_mode]`, field.fp_mode ?? 'genius');
             formData.append(`fields[${index}][fp_clip_corners]`, field.fp_clip_corners ?? 1);
             formData.append(`fields[${index}][fp_terrain_following]`, field.fp_terrain_following ?? 0);
             formData.append(`fields[${index}][fp_show_wp_height]`, field.fp_show_wp_height ?? 0);
