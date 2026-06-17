@@ -839,6 +839,8 @@ class App {
         if (field) {
             field[key] = val;
         }
+        // Save to sessionStorage for persistence across fields
+        sessionStorage.setItem('fp_' + key, val);
     }
 
     initFPInputs() {
@@ -961,6 +963,7 @@ class App {
         this.terrainFollowingCheckbox.addEventListener('change', (e) => {
             const heightModeContainer = document.getElementById('fp-height-mode-container');
             const heightModeSelect = document.getElementById('fp-height-mode');
+            const heightOffsetContainer = document.getElementById('fp-height-offset-container');
             const checked = e.target.checked;
             this.updateActiveFieldParam('fp_terrain_following', checked ? 1 : 0);
 
@@ -968,16 +971,34 @@ class App {
                 heightModeContainer.classList.remove('hidden');
                 heightModeSelect.value = 'absolute';
                 this.updateActiveFieldParam('fp_height_mode', 'absolute');
+                heightOffsetContainer.classList.remove('hidden');
                 this.showWPHeightCheckbox.disabled = false;
                 this.showWPHeightCheckbox.checked = true;
                 this.updateActiveFieldParam('fp_show_wp_height', 1);
             } else {
                 heightModeContainer.classList.add('hidden');
+                heightOffsetContainer.classList.add('hidden');
                 this.showWPHeightCheckbox.disabled = true;
                 this.showWPHeightCheckbox.checked = false;
                 this.updateActiveFieldParam('fp_show_wp_height', 0);
             }
             this.scheduleFPUpdate();
+        });
+
+        document.getElementById('fp-height-mode').addEventListener('change', (e) => {
+            const heightOffsetContainer = document.getElementById('fp-height-offset-container');
+            if (e.target.value === 'absolute') {
+                heightOffsetContainer.classList.remove('hidden');
+            } else {
+                heightOffsetContainer.classList.add('hidden');
+            }
+            this.updateActiveFieldParam('fp_height_mode', e.target.value);
+            this.generateFlightPlan();
+        });
+
+        document.getElementById('fp-height-offset').addEventListener('input', (e) => {
+            this.updateActiveFieldParam('fp_height_offset', e.target.value);
+            this.generateFlightPlan();
         });
 
         this.showWPHeightCheckbox.addEventListener('change', (e) => {
@@ -1079,6 +1100,7 @@ class App {
 
     updateFieldList() {
         this.fieldList.innerHTML = '';
+        this.updateMapLabels();
 
         const totalArea = this.fields.reduce((sum, field) => sum + field.area, 0);
         const totalAreaDiv = document.createElement('div');
@@ -1193,6 +1215,47 @@ class App {
         }
     }
 
+    updateMapLabels() {
+        if (!this.mapManager.labelLayer) return;
+        this.mapManager.labelLayer.clearLayers();
+        this.fields.forEach(field => {
+            const layer = this.mapManager.drawnItems.getLayer(field.id);
+            if (layer && typeof layer.getBounds === 'function' && this.mapManager.map.hasLayer(layer)) {
+                const center = layer.getBounds().getCenter();
+                let customerName = "";
+
+                if (this.currentCustomerId === 'all') {
+                    const cust = this.allCustomersData.find(c => String(c.id) === String(field.customer_id));
+                    if (cust) customerName = (cust.first_name || "") + " " + (cust.name || "");
+                } else if (this.currentUser) {
+                    customerName = (this.currentUser.first_name || "") + " " + (this.currentUser.name || "");
+                } else {
+                    // Fallback to cd-name if available
+                    const firstName = document.getElementById('cd-first_name').value;
+                    const lastName = document.getElementById('cd-name').value;
+                    if (lastName) customerName = firstName + " " + lastName;
+                }
+
+                const labelContent = `
+                    <div class="field-label">
+                        ${field.name}
+                        ${customerName ? `<span class="customer-name">${customerName}</span>` : ''}
+                    </div>
+                `;
+
+                L.marker(center, {
+                    icon: L.divIcon({
+                        className: 'field-label-container',
+                        html: labelContent,
+                        iconSize: [100, 40],
+                        iconAnchor: [50, 20]
+                    }),
+                    interactive: false
+                }).addTo(this.mapManager.labelLayer);
+            }
+        });
+    }
+
     openFlightPlanSidebar(id) {
         const prevId = document.getElementById('fp-field-id').value;
         const field = this.fields.find(f => String(f.id) === String(id));
@@ -1211,6 +1274,9 @@ class App {
         this.zoomToField(id);
 
         if (prevId !== id) {
+            // Load parameters from session for cross-field persistence
+            this.loadFPParametersFromSession(field);
+
             // Load saved parameters into UI if they exist
             if (field.fp_path_distance !== undefined && field.fp_path_distance !== null) {
                 this.loadFPParametersIntoUI(field);
@@ -2592,6 +2658,7 @@ class App {
 
         const speed = parseFloat(document.getElementById('fp-speed').value) || 12;
         const globalHeight = Math.round(parseFloat(document.getElementById('fp-height').value)) || 25;
+        const heightOffset = Math.round(parseFloat(document.getElementById('fp-height-offset').value)) || 0;
 
         const terrainFollowing = this.terrainFollowingCheckbox.checked;
         const heightMode = terrainFollowing ? document.getElementById('fp-height-mode').value : 'relativeToStartPoint';
@@ -2654,14 +2721,17 @@ class App {
 
         let placemarks = '';
         latlngs.forEach((ll, idx) => {
-            const h = (ll.alt !== undefined) ? Math.round(ll.alt) : globalHeight;
+            let h = (ll.alt !== undefined) ? Math.round(ll.alt) : globalHeight;
+            if (heightMode === 'absolute') {
+                h += heightOffset;
+            }
             placemarks += `
       <Placemark>
         <Point>
           <coordinates>${ll.lng},${ll.lat}</coordinates>
         </Point>
         <wpml:index>${idx}</wpml:index>
-        <wpml:useGlobalHeight>0</wpml:useGlobalHeight>
+        <wpml:useGlobalHeight>1</wpml:useGlobalHeight>
         <wpml:height>${h}</wpml:height>
         <wpml:waypointSpeed>${speed}</wpml:waypointSpeed>
         <wpml:useGlobalSpeed>0</wpml:useGlobalSpeed>
@@ -3157,6 +3227,7 @@ class App {
                         fieldInApp.fp_execute_rc_lost_action = f.fp_execute_rc_lost_action;
                         fieldInApp.fp_fly_to_wayline_mode = f.fp_fly_to_wayline_mode;
                         fieldInApp.fp_takeoff_security_height = f.fp_takeoff_security_height;
+                        fieldInApp.fp_height_offset = f.fp_height_offset;
                         fieldInApp.fp_waypoint_turn_mode = f.fp_waypoint_turn_mode;
                         fieldInApp.fp_waypoint_heading_mode = f.fp_waypoint_heading_mode;
                         fieldInApp.flight_path = f.flight_path;
@@ -3230,6 +3301,7 @@ class App {
                         fieldInApp.fp_execute_rc_lost_action = f.fp_execute_rc_lost_action;
                         fieldInApp.fp_fly_to_wayline_mode = f.fp_fly_to_wayline_mode;
                         fieldInApp.fp_takeoff_security_height = f.fp_takeoff_security_height;
+                        fieldInApp.fp_height_offset = f.fp_height_offset;
                         fieldInApp.fp_waypoint_turn_mode = f.fp_waypoint_turn_mode;
                         fieldInApp.fp_waypoint_heading_mode = f.fp_waypoint_heading_mode;
                         fieldInApp.flight_path = f.flight_path;
@@ -3412,6 +3484,45 @@ class App {
         initResizer(rightResizer, rightSidebar, 'right');
     }
 
+    loadFPParametersFromSession(field) {
+        // Build a temporary object from sessionStorage
+        const sessionField = {
+            fp_path_distance: sessionStorage.getItem('fp_fp_path_distance'),
+            fp_border_distance: sessionStorage.getItem('fp_fp_border_distance'),
+            fp_damping_distance: sessionStorage.getItem('fp_fp_damping_distance'),
+            fp_min_dist: sessionStorage.getItem('fp_fp_min_dist'),
+            fp_orientation: sessionStorage.getItem('fp_fp_orientation'),
+            fp_speed: sessionStorage.getItem('fp_fp_speed'),
+            fp_height: sessionStorage.getItem('fp_fp_height'),
+            fp_mode: sessionStorage.getItem('fp_fp_mode'),
+            fp_clip_corners: sessionStorage.getItem('fp_fp_clip_corners'),
+            fp_terrain_following: sessionStorage.getItem('fp_fp_terrain_following'),
+            fp_show_wp_height: sessionStorage.getItem('fp_fp_show_wp_height'),
+            fp_height_mode: sessionStorage.getItem('fp_fp_height_mode'),
+            fp_height_offset: sessionStorage.getItem('fp_fp_height_offset'),
+            fp_drone_info: sessionStorage.getItem('fp_fp_drone_info'),
+            fp_payload_info: sessionStorage.getItem('fp_fp_payload_info'),
+            fp_finish_action: sessionStorage.getItem('fp_fp_finish_action'),
+            fp_rc_lost_action: sessionStorage.getItem('fp_fp_rc_lost_action'),
+            fp_execute_rc_lost_action: sessionStorage.getItem('fp_fp_execute_rc_lost_action'),
+            fp_fly_to_wayline_mode: sessionStorage.getItem('fp_fp_fly_to_wayline_mode'),
+            fp_takeoff_security_height: sessionStorage.getItem('fp_fp_takeoff_security_height'),
+            fp_waypoint_turn_mode: sessionStorage.getItem('fp_fp_waypoint_turn_mode'),
+            fp_waypoint_heading_mode: sessionStorage.getItem('fp_fp_waypoint_heading_mode')
+        };
+
+        // Only load if at least some basic params exist in session
+        if (sessionField.fp_path_distance !== null) {
+            // Apply session values to the field object so they are used for generation
+            for (let key in sessionField) {
+                if (sessionField[key] !== null) {
+                    field[key] = sessionField[key];
+                }
+            }
+            this.loadFPParametersIntoUI(field);
+        }
+    }
+
     loadFPParametersIntoUI(field) {
         const setVal = (sliderId, inputId, valSpanId, val, isOrientation = false) => {
             const slider = document.getElementById(sliderId);
@@ -3458,9 +3569,13 @@ class App {
         document.getElementById('fp-takeoff-security-height').value = field.fp_takeoff_security_height || field.fp_height || '25';
         document.getElementById('fp-waypoint-turn-mode').value = field.fp_waypoint_turn_mode || 'coordinateTurn';
         document.getElementById('fp-waypoint-heading-mode').value = field.fp_waypoint_heading_mode || 'followWayline';
+        if (field.fp_height_offset !== undefined && field.fp_height_offset !== null) {
+            document.getElementById('fp-height-offset').value = field.fp_height_offset;
+        }
 
         // Trigger UI updates
         this.terrainFollowingCheckbox.dispatchEvent(new Event('change'));
+        document.getElementById('fp-height-mode').dispatchEvent(new Event('change'));
         document.getElementById('fp-rc-lost-action').dispatchEvent(new Event('change'));
     }
 
@@ -3536,6 +3651,8 @@ class App {
             formData.append(`fields[${index}][fp_execute_rc_lost_action]`, field.fp_execute_rc_lost_action ?? 'goBack');
             formData.append(`fields[${index}][fp_fly_to_wayline_mode]`, field.fp_fly_to_wayline_mode ?? 'safely');
             formData.append(`fields[${index}][fp_takeoff_security_height]`, field.fp_takeoff_security_height ?? 2);
+            formData.append(`fields[${index}][fp_height_offset]`, (field.fp_height_offset !== undefined && field.fp_height_offset !== null) ? field.fp_height_offset : 50);
+            formData.append(`fields[${index}][fp_damping_distance]`, field.fp_damping_distance ?? 4.0);
             formData.append(`fields[${index}][fp_waypoint_turn_mode]`, field.fp_waypoint_turn_mode ?? 'coordinateTurn');
             formData.append(`fields[${index}][fp_waypoint_heading_mode]`, field.fp_waypoint_heading_mode ?? 'followWayline');
 
