@@ -40,6 +40,9 @@ class MapManager {
 
         googleHybrid.addTo(this.map);
 
+        this.labelLayer = new L.LayerGroup();
+        this.map.addLayer(this.labelLayer);
+
         const baseMaps = {
             "Google Satellit": googleHybrid,
             "Satellit WMS (EOX)": satelliteWMS,
@@ -48,7 +51,8 @@ class MapManager {
         };
 
         const overlayMaps = {
-            "Eingezeichnete Schläge": this.drawnItems
+            "Eingezeichnete Schläge": this.drawnItems,
+            "Beschriftungen": this.labelLayer
         };
 
         L.control.layers(baseMaps, overlayMaps).addTo(this.map);
