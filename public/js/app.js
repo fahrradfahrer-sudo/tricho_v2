@@ -2731,7 +2731,7 @@ class App {
           <coordinates>${ll.lng},${ll.lat}</coordinates>
         </Point>
         <wpml:index>${idx}</wpml:index>
-        <wpml:useGlobalHeight>1</wpml:useGlobalHeight>
+        <wpml:useGlobalHeight>0</wpml:useGlobalHeight>
         <wpml:height>${h}</wpml:height>
         <wpml:waypointSpeed>${speed}</wpml:waypointSpeed>
         <wpml:useGlobalSpeed>0</wpml:useGlobalSpeed>
