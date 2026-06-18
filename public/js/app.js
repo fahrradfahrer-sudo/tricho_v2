@@ -963,21 +963,18 @@ class App {
         this.terrainFollowingCheckbox.addEventListener('change', (e) => {
             const heightModeContainer = document.getElementById('fp-height-mode-container');
             const heightModeSelect = document.getElementById('fp-height-mode');
-            const heightOffsetContainer = document.getElementById('fp-height-offset-container');
             const checked = e.target.checked;
             this.updateActiveFieldParam('fp_terrain_following', checked ? 1 : 0);
 
             if (checked) {
                 heightModeContainer.classList.remove('hidden');
-                heightModeSelect.value = 'absolute';
-                this.updateActiveFieldParam('fp_height_mode', 'absolute');
-                heightOffsetContainer.classList.remove('hidden');
+                heightModeSelect.value = 'EGM96';
+                this.updateActiveFieldParam('fp_height_mode', 'EGM96');
                 this.showWPHeightCheckbox.disabled = false;
                 this.showWPHeightCheckbox.checked = true;
                 this.updateActiveFieldParam('fp_show_wp_height', 1);
             } else {
                 heightModeContainer.classList.add('hidden');
-                heightOffsetContainer.classList.add('hidden');
                 this.showWPHeightCheckbox.disabled = true;
                 this.showWPHeightCheckbox.checked = false;
                 this.updateActiveFieldParam('fp_show_wp_height', 0);
@@ -986,18 +983,7 @@ class App {
         });
 
         document.getElementById('fp-height-mode').addEventListener('change', (e) => {
-            const heightOffsetContainer = document.getElementById('fp-height-offset-container');
-            if (e.target.value === 'absolute') {
-                heightOffsetContainer.classList.remove('hidden');
-            } else {
-                heightOffsetContainer.classList.add('hidden');
-            }
             this.updateActiveFieldParam('fp_height_mode', e.target.value);
-            this.generateFlightPlan();
-        });
-
-        document.getElementById('fp-height-offset').addEventListener('input', (e) => {
-            this.updateActiveFieldParam('fp_height_offset', e.target.value);
             this.generateFlightPlan();
         });
 
@@ -2658,7 +2644,6 @@ class App {
 
         const speed = parseFloat(document.getElementById('fp-speed').value) || 12;
         const globalHeight = Math.round(parseFloat(document.getElementById('fp-height').value)) || 25;
-        const heightOffset = Math.round(parseFloat(document.getElementById('fp-height-offset').value)) || 0;
 
         const terrainFollowing = this.terrainFollowingCheckbox.checked;
         const heightMode = terrainFollowing ? document.getElementById('fp-height-mode').value : 'relativeToStartPoint';
@@ -2722,9 +2707,6 @@ class App {
         let placemarks = '';
         latlngs.forEach((ll, idx) => {
             let h = (ll.alt !== undefined) ? Math.round(ll.alt) : globalHeight;
-            if (heightMode === 'absolute') {
-                h += heightOffset;
-            }
             placemarks += `
       <Placemark>
         <Point>
@@ -3227,7 +3209,6 @@ class App {
                         fieldInApp.fp_execute_rc_lost_action = f.fp_execute_rc_lost_action;
                         fieldInApp.fp_fly_to_wayline_mode = f.fp_fly_to_wayline_mode;
                         fieldInApp.fp_takeoff_security_height = f.fp_takeoff_security_height;
-                        fieldInApp.fp_height_offset = f.fp_height_offset;
                         fieldInApp.fp_waypoint_turn_mode = f.fp_waypoint_turn_mode;
                         fieldInApp.fp_waypoint_heading_mode = f.fp_waypoint_heading_mode;
                         fieldInApp.flight_path = f.flight_path;
@@ -3301,7 +3282,6 @@ class App {
                         fieldInApp.fp_execute_rc_lost_action = f.fp_execute_rc_lost_action;
                         fieldInApp.fp_fly_to_wayline_mode = f.fp_fly_to_wayline_mode;
                         fieldInApp.fp_takeoff_security_height = f.fp_takeoff_security_height;
-                        fieldInApp.fp_height_offset = f.fp_height_offset;
                         fieldInApp.fp_waypoint_turn_mode = f.fp_waypoint_turn_mode;
                         fieldInApp.fp_waypoint_heading_mode = f.fp_waypoint_heading_mode;
                         fieldInApp.flight_path = f.flight_path;
@@ -3499,7 +3479,6 @@ class App {
             fp_terrain_following: sessionStorage.getItem('fp_fp_terrain_following'),
             fp_show_wp_height: sessionStorage.getItem('fp_fp_show_wp_height'),
             fp_height_mode: sessionStorage.getItem('fp_fp_height_mode'),
-            fp_height_offset: sessionStorage.getItem('fp_fp_height_offset'),
             fp_drone_info: sessionStorage.getItem('fp_fp_drone_info'),
             fp_payload_info: sessionStorage.getItem('fp_fp_payload_info'),
             fp_finish_action: sessionStorage.getItem('fp_fp_finish_action'),
@@ -3569,9 +3548,6 @@ class App {
         document.getElementById('fp-takeoff-security-height').value = field.fp_takeoff_security_height || field.fp_height || '25';
         document.getElementById('fp-waypoint-turn-mode').value = field.fp_waypoint_turn_mode || 'coordinateTurn';
         document.getElementById('fp-waypoint-heading-mode').value = field.fp_waypoint_heading_mode || 'followWayline';
-        if (field.fp_height_offset !== undefined && field.fp_height_offset !== null) {
-            document.getElementById('fp-height-offset').value = field.fp_height_offset;
-        }
 
         // Trigger UI updates
         this.terrainFollowingCheckbox.dispatchEvent(new Event('change'));
@@ -3651,7 +3627,6 @@ class App {
             formData.append(`fields[${index}][fp_execute_rc_lost_action]`, field.fp_execute_rc_lost_action ?? 'goBack');
             formData.append(`fields[${index}][fp_fly_to_wayline_mode]`, field.fp_fly_to_wayline_mode ?? 'safely');
             formData.append(`fields[${index}][fp_takeoff_security_height]`, field.fp_takeoff_security_height ?? 2);
-            formData.append(`fields[${index}][fp_height_offset]`, (field.fp_height_offset !== undefined && field.fp_height_offset !== null) ? field.fp_height_offset : 50);
             formData.append(`fields[${index}][fp_damping_distance]`, field.fp_damping_distance ?? 4.0);
             formData.append(`fields[${index}][fp_waypoint_turn_mode]`, field.fp_waypoint_turn_mode ?? 'coordinateTurn');
             formData.append(`fields[${index}][fp_waypoint_heading_mode]`, field.fp_waypoint_heading_mode ?? 'followWayline');
